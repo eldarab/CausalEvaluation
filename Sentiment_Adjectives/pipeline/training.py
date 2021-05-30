@@ -1,4 +1,4 @@
-from constants import SENTIMENT_EXPERIMENTS_DIR, MAX_SENTIMENT_SEQ_LENGTH, SENTIMENT_ADJECTIVES_PRETRAIN_IMA_DIR, \
+from utils.constants import SENTIMENT_EXPERIMENTS_DIR, MAX_SENTIMENT_SEQ_LENGTH, SENTIMENT_ADJECTIVES_PRETRAIN_IMA_DIR, \
     SENTIMENT_ADJECTIVES_DATASETS_DIR
 from pytorch_lightning import Trainer
 from BERT.bert_text_classifier import LightningBertPretrainedClassifier, LightningHyperparameters
@@ -9,8 +9,8 @@ from argparse import ArgumentParser
 from typing import Dict
 import torch
 
-from datasets.utils import NUM_POS_TAGS_LABELS
-from utils import init_logger
+from utils.data_utils import NUM_POS_TAGS_LABELS
+from utils.main_utils import init_logger
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

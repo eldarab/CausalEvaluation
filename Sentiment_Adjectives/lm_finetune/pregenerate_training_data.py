@@ -1,11 +1,11 @@
 from argparse import ArgumentParser
 from pathlib import Path
-from tqdm import tqdm, trange
+from tqdm import trange
 from tempfile import TemporaryDirectory
 import shelve
-from constants import BERT_PRETRAINED_MODEL, SENTIMENT_ADJECTIVES_PRETRAIN_DATA_DIR, \
+from utils.constants import BERT_PRETRAINED_MODEL, SENTIMENT_ADJECTIVES_PRETRAIN_DATA_DIR, \
     MAX_SENTIMENT_SEQ_LENGTH, NUM_CPU, SENTIMENT_ADJECTIVES_DATASETS_DIR
-from datasets.utils import TOKEN_SEPARATOR, ADJ_POS_TAGS, MASK_TOKEN, CLS_TOKEN, SEP_TOKEN, WORDPIECE_PREFIX, \
+from utils.data_utils import TOKEN_SEPARATOR, ADJ_POS_TAGS, MASK_TOKEN, CLS_TOKEN, SEP_TOKEN, WORDPIECE_PREFIX, \
     POS_TAG_IDX_MAP
 from BERT.bert_pos_tagger import BertTokenClassificationDataset
 from random import random, randrange, choice
@@ -389,7 +389,7 @@ def main():
     parser.add_argument("--do_whole_word_mask", action="store_true",
                         help="Whether to use whole word masking rather than per-WordPiece masking.")
     parser.add_argument("--reduce_memory", action="store_true",
-                        help="Reduce memory usage for large datasets by keeping data on disc rather than in memory")
+                        help="Reduce memory usage for large data by keeping data on disc rather than in memory")
 
     parser.add_argument("--num_workers", type=int, default=NUM_CPU,
                         help="The number of workers to use to write the files")

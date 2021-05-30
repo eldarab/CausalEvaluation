@@ -18,9 +18,9 @@ from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from BERT.lm_finetune.bert_mlm_finetune import BertForMLMPreTraining
 from Sentiment_Adjectives.lm_finetune.pregenerate_training_data import EPOCHS
 from BERT.bert_text_dataset import BertTextDataset
-from utils import init_logger
+from utils.main_utils import init_logger
 
-from constants import RANDOM_SEED, BERT_PRETRAINED_MODEL, NUM_CPU, \
+from utils.constants import RANDOM_SEED, BERT_PRETRAINED_MODEL, NUM_CPU, \
     SENTIMENT_ADJECTIVES_PRETRAIN_DATA_DIR, SENTIMENT_ADJECTIVES_PRETRAIN_MLM_DIR
 
 BATCH_SIZE = 10

@@ -2,7 +2,7 @@ from constants import RANDOM_SEED
 from sklearn.model_selection import train_test_split
 from pandas import DataFrame
 from spacy.lang.tag_map import TAG_MAP
-from utils import init_logger
+from data_utils import init_logger
 import spacy
 import re
 import numpy as np

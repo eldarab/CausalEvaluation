@@ -1,7 +1,7 @@
 from random import random
 from torch.utils.data import TensorDataset, Dataset
 from transformers.tokenization_bert import BertTokenizer
-from constants import BERT_PRETRAINED_MODEL, MAX_SENTIMENT_SEQ_LENGTH
+from utils.constants import BERT_PRETRAINED_MODEL, MAX_SENTIMENT_SEQ_LENGTH
 from abc import abstractmethod
 from typing import List
 import pandas as pd

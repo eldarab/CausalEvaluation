@@ -14,15 +14,15 @@ from tqdm import tqdm
 
 from transformers import BertConfig
 
-from utils import init_logger
+from utils.main_utils import init_logger
 
 from transformers.tokenization_bert import BertTokenizer
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 
 from BERT.bert_text_dataset import BertTextDataset
 from BERT.bert_pos_tagger import BertTokenClassificationDataset
-from constants import BERT_PRETRAINED_MODEL, RANDOM_SEED, SENTIMENT_ADJECTIVES_PRETRAIN_DATA_DIR, SENTIMENT_ADJECTIVES_PRETRAIN_IMA_DIR, NUM_CPU
-from datasets.utils import NUM_POS_TAGS_LABELS
+from utils.constants import BERT_PRETRAINED_MODEL, RANDOM_SEED, SENTIMENT_ADJECTIVES_PRETRAIN_DATA_DIR, SENTIMENT_ADJECTIVES_PRETRAIN_IMA_DIR, NUM_CPU
+from utils.data_utils import NUM_POS_TAGS_LABELS
 from Sentiment_Adjectives.lm_finetune.pregenerate_training_data import EPOCHS
 from Sentiment_Adjectives.lm_finetune.bert_ima_finetune import BertForIMAPreTraining, BertForIMAwControlPreTraining
 

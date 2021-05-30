@@ -3,12 +3,12 @@ from copy import deepcopy
 
 from BERT.bert_text_classifier import LightningBertPretrainedClassifier, BertPretrainedClassifier
 from BERT.bert_pos_tagger import LightningBertPOSTagger
-from constants import SENTIMENT_EXPERIMENTS_DIR, MAX_SENTIMENT_SEQ_LENGTH, SENTIMENT_ADJECTIVES_PRETRAIN_IMA_DIR, \
+from utils.constants import SENTIMENT_EXPERIMENTS_DIR, MAX_SENTIMENT_SEQ_LENGTH, SENTIMENT_ADJECTIVES_PRETRAIN_IMA_DIR, \
     SENTIMENT_ADJECTIVES_DATASETS_DIR, SENTIMENT_ADJECTIVES_PRETRAIN_MLM_DIR
 from pytorch_lightning import Trainer, LightningModule
 
-from datasets.utils import NUM_POS_TAGS_LABELS
-from utils import GoogleDriveHandler,  init_logger, print_final_metrics, find_latest_model_checkpoint
+from utils.data_utils import NUM_POS_TAGS_LABELS
+from utils.main_utils import GoogleDriveHandler,  init_logger, print_final_metrics, find_latest_model_checkpoint
 import torch
 
 

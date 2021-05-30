@@ -1,5 +1,5 @@
 from os import path
-from utils import count_num_cpu_gpu
+from utils.main_utils import count_num_cpu_gpu
 
 CAUSALM_DIR = path.dirname(path.realpath(__file__)) # This must be set to the path which specifies where the CausaLM project resides
 

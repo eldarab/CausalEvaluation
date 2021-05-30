@@ -10,9 +10,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
-from datasets.utils import CLS_TOKEN, SEP_TOKEN, TOKEN_SEPARATOR, NUM_POS_TAGS_LABELS
-from constants import NUM_CPU, MAX_SENTIMENT_SEQ_LENGTH, BERT_PRETRAINED_MODEL
-from utils import save_predictions
+from utils.data_utils import CLS_TOKEN, SEP_TOKEN, TOKEN_SEPARATOR, NUM_POS_TAGS_LABELS
+from utils.constants import NUM_CPU, MAX_SENTIMENT_SEQ_LENGTH, BERT_PRETRAINED_MODEL
+from utils.main_utils import save_predictions
 
 
 class LightningBertPOSTagger(LightningModule):
