@@ -2,7 +2,7 @@ from constants import RANDOM_SEED
 from sklearn.model_selection import train_test_split
 from pandas import DataFrame
 from spacy.lang.tag_map import TAG_MAP
-from data_utils import init_logger
+from utils import init_logger
 import spacy
 import re
 import numpy as np
@@ -37,7 +37,6 @@ def clean_review(text: str) -> str:
 
 
 class PretrainedPOSTagger:
-
     """This module requires en_core_web_lg model to be installed"""
     tagger = spacy.load("en_core_web_lg")
 
@@ -73,7 +72,7 @@ def bias_random_sampling(df: DataFrame, bias_column: str, biasing_factor: float,
 
 
 def bias_ranked_sampling(df: DataFrame, bias_column: str, biasing_factor: float):
-    return df.sort_values(by=bias_column, ascending=False).head(int(len(df)*biasing_factor))
+    return df.sort_values(by=bias_column, ascending=False).head(int(len(df) * biasing_factor))
 
 
 def bias_aggressive(df_a, df_b, label_column, bias_column,
