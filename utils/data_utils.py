@@ -1,24 +1,26 @@
-from constants import RANDOM_SEED
-from sklearn.model_selection import train_test_split
-from pandas import DataFrame
-from spacy.lang.tag_map import TAG_MAP
-from utils import init_logger
-import spacy
 import re
+
 import numpy as np
 import pandas as pd
+import spacy
+from pandas import DataFrame
+from sklearn.model_selection import train_test_split
 
-### BERT constants
+from .constants import RANDOM_SEED
+# from spacy.lang.tag_map import TAG_MAP
+from .main_utils import init_logger
+
+# BERT constants
 WORDPIECE_PREFIX = "##"
 CLS_TOKEN = "[CLS]"
 SEP_TOKEN = "[SEP]"
 MASK_TOKEN = "[MASK]"
 
-### POS Tags constants
+# POS Tags constants
 TOKEN_SEPARATOR = " "
 WORD_POS_SEPARATOR = "_"
 ADJ_POS_TAGS = ("ADJ", "ADV")
-POS_TAGS_TUPLE = tuple(sorted(TAG_MAP.keys()))
+POS_TAGS_TUPLE = tuple(sorted({}.keys()))  # POS_TAGS_TUPLE = tuple(sorted(TAG_MAP.keys()))
 POS_TAG_IDX_MAP = {str(tag): int(idx) for idx, tag in enumerate(POS_TAGS_TUPLE)}
 ADJ_POS_TAGS_IDX = {"ADJ": 0, "ADV": 2}
 NUM_POS_TAGS_LABELS = len(POS_TAGS_TUPLE)
@@ -67,7 +69,7 @@ def print_text_stats(df: DataFrame, text_column: str):
     print(f"Mean sequence length in dataset: {np.mean(sequence_lengths)}")
 
 
-def bias_random_sampling(df: DataFrame, bias_column: str, biasing_factor: float, seed: int = RANDOM_SEED):
+def bias_random_sampling(df: DataFrame, biasing_factor: float, seed: int = RANDOM_SEED):
     return df.sample(frac=biasing_factor, random_state=seed)
 
 
@@ -181,11 +183,11 @@ def validate_dataset(df, stats_columns, bias_column, label_column, logger=None):
         if col.endswith("_label"):
             logger.info(f"{df[col].value_counts(dropna=False)}\n")
     for col in stats_columns:
-        col_vals = df[col]
+        col_values = df[col]
         logger.info(f"{col} statistics:")
-        logger.info(f"Min: {col_vals.min()}")
-        logger.info(f"Max: {col_vals.max()}")
-        logger.info(f"Std: {col_vals.std()}")
-        logger.info(f"Mean: {col_vals.mean()}")
-        logger.info(f"Median: {col_vals.median()}")
+        logger.info(f"Min: {col_values.min()}")
+        logger.info(f"Max: {col_values.max()}")
+        logger.info(f"Std: {col_values.std()}")
+        logger.info(f"Mean: {col_values.mean()}")
+        logger.info(f"Median: {col_values.median()}")
     logger.info(f"Correlation between {bias_column} and {label_column}: {df[bias_column].corr(df[label_column].astype(float))}\n")

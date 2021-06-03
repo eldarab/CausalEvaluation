@@ -1,3 +1,8 @@
+"""
+This file contains constants for the causal evaluation part of the code.
+"""
+
+
 CAUSAL_EVAL_DIR = '~/CausalEvaluation'
 
 EXPERIMENTS_DIR = f'{CAUSAL_EVAL_DIR}/experiments'
