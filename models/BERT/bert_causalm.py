@@ -36,7 +36,7 @@ class BertCausalmAdditionalPreTrainingHeads(nn.Module):
 
     @staticmethod
     def __init_causalm_heads(config, mode):
-        heads = []
+        heads = nn.ModuleList()
 
         if mode == 'tc':
             heads_cfg = config.tc_heads_cfg
@@ -57,9 +57,12 @@ class BertCausalmAdditionalPreTrainingHeads(nn.Module):
 
 
 class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
+    config_class = BertCausalmConfig
+    base_model_prefix = "bert_causalm"
+
     def __init__(self, config):
         super().__init__(config)
-        self.config = config
+        self.config: BertCausalmConfig = config
 
         self.bert = BertModel(config)
         self.additional_pretraining_heads = BertCausalmAdditionalPreTrainingHeads(config)
@@ -74,8 +77,9 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            labels=None,
-            next_sentence_label=None,  # TODO TC/CC label
+            task_labels=None,
+            tc_labels=None,
+            cc_labels=None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -103,18 +107,18 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
                 raise NotImplementedError()
 
         total_loss = None
-        if labels is not None and next_sentence_label is not None:
+        if task_labels is not None and tc_labels is not None:
             loss_fct = CrossEntropyLoss()
 
-            masked_lm_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), labels.view(-1))
+            masked_lm_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), task_labels.view(-1))
 
             tc_loss = torch.tensor(0.)
             for tc_head_score, tc_head_cfg in zip(tc_heads_scores, self.config.tc_heads_cfg):
-                tc_loss += loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), next_sentence_label.view(-1))
+                tc_loss += loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
 
             cc_loss = torch.tensor(0.)
             for cc_head_score, cc_head_cfg in zip(cc_heads_scores, self.config.cc_heads_cfg):
-                cc_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), next_sentence_label.view(-1))
+                cc_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_labels.view(-1))
 
             total_loss = masked_lm_loss + tc_loss - cc_loss  # note the loss reversal!
 
