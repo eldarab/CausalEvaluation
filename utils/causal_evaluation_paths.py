@@ -2,8 +2,8 @@
 This file contains constants for the causal evaluation part of the code.
 """
 
-
-CAUSAL_EVAL_DIR = '~/CausalEvaluation'
+HOME_DIR = f'/home/eldar.a'
+CAUSAL_EVAL_DIR = f'{HOME_DIR}/CausalEvaluation'
 
 EXPERIMENTS_DIR = f'{CAUSAL_EVAL_DIR}/experiments'
 DATA_DIR = f'{CAUSAL_EVAL_DIR}/data'
