@@ -4,8 +4,9 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
-from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertModel, BertLMPredictionHead
+from transformers import BertConfig
 from transformers.file_utils import ModelOutput
+from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertModel, BertLMPredictionHead
 
 from models.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
 from utils import SEQUENCE_CLASSIFICATION, TOKEN_CLASSIFICATION
@@ -60,9 +61,9 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
     config_class = BertCausalmConfig
     base_model_prefix = "bert_causalm"
 
-    def __init__(self, config):
+    def __init__(self, config: BertCausalmConfig):
         super().__init__(config)
-        self.config: BertCausalmConfig = config
+        self.config = config
 
         self.bert = BertModel(config)
         self.additional_pretraining_heads = BertCausalmAdditionalPreTrainingHeads(config)
@@ -77,7 +78,7 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            task_labels=None,
+            lm_labels=None,
             tc_labels=None,
             cc_labels=None,
             output_attentions=None,
@@ -107,20 +108,19 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
                 raise NotImplementedError()
 
         total_loss = None
-        if task_labels is not None and tc_labels is not None:
+        if lm_labels is not None and tc_labels is not None:
             loss_fct = CrossEntropyLoss()
 
-            masked_lm_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), task_labels.view(-1))
+            # LM loss
+            total_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), lm_labels.view(-1))
 
-            tc_loss = torch.tensor(0.)
+            # Treated concepts loss, note the minus
             for tc_head_score, tc_head_cfg in zip(tc_heads_scores, self.config.tc_heads_cfg):
-                tc_loss += loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
+                total_loss -= loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
 
-            cc_loss = torch.tensor(0.)
+            # Control concepts loss
             for cc_head_score, cc_head_cfg in zip(cc_heads_scores, self.config.cc_heads_cfg):
-                cc_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_labels.view(-1))
-
-            total_loss = masked_lm_loss + tc_loss - cc_loss  # note the loss reversal!
+                total_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_labels.view(-1))
 
         if not return_dict:
             output = (mlm_head_scores, tc_heads_scores, cc_heads_scores) + outputs[2:]
@@ -138,11 +138,8 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
 
 def test_caribbean_bert():
     config = BertCausalmConfig(
-        tc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION,
-                                        head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})],
-        cc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION,
-                                        head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})]
+        tc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION, head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})],
+        cc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION, head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})]
     )
     caribbean_bert = BertForCausalmAdditionalPreTraining(config)
-
     caribbean_bert(5)

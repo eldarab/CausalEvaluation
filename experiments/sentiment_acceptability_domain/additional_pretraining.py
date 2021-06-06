@@ -1,18 +1,22 @@
+import time
+
 import torch
 from datasets import load_dataset, ClassLabel, Features, Value
 from torch.utils.data import DataLoader
-from transformers import BertTokenizerFast, AdamW, BertForPreTraining, BertConfig
+from tqdm import tqdm
+from transformers import BertTokenizerFast, AdamW, BertForPreTraining, BertConfig, DataCollatorForLanguageModeling
 
 from experiments.sentiment_acceptability_domain.dataset import CaribbeanDataset
 from models.BERT.bert_causalm import BertForCausalmAdditionalPreTraining
 from models.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
-from utils import DATA_DIR, RANDOM_SEED
+from utils import DATA_DIR, RANDOM_SEED, SENTIMENT_ACCEPTABILITY_DOMAIN_DIR
 from utils import SEQUENCE_CLASSIFICATION
 
 
 def main():
     # torch
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    time_str = time.strftime('%Y_%m_%d__%H_%M_%S')
 
     # data
     features = Features({
@@ -43,42 +47,39 @@ def main():
 
     # model
     config = BertCausalmConfig(
-        tc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION, head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})],
-        cc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION, head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})],
+        tc_heads_cfg=[CausalmHeadConfig(head_name='acceptability', head_type=SEQUENCE_CLASSIFICATION, head_params={'num_labels': 2})],
+        cc_heads_cfg=[CausalmHeadConfig(head_name='is_books', head_type=SEQUENCE_CLASSIFICATION, head_params={'num_labels': 2})],
     )
     model = BertForCausalmAdditionalPreTraining(config)
     model.to(device)
     model.train()
 
-    config_bert = BertConfig()
-    model_bert = BertForPreTraining(config_bert).from_pretrained('bert-base-uncased')
-    model_bert.to(device)
-    model_bert.train()
-
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    lm_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=0.15)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=lm_data_collator)
 
     optim = AdamW(model.parameters(), lr=5e-5)
-    optim_bert = AdamW(model.parameters(), lr=5e-5)
 
-    for epoch in range(3):
-        for batch in train_loader:
+    for epoch in range(5):
+        total_loss = 0
+        for batch in tqdm(train_loader, desc='batch'):
             optim.zero_grad()
-            optim_bert.zero_grad()
 
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
-            task_labels = batch['task_labels'].to(device)
+            lm_labels = batch['labels'].to(device)
             tc_labels = batch['tc_labels'].to(device)
             cc_labels = batch['cc_labels'].to(device)
 
-            outputs_bert = model_bert(input_ids, attention_mask=attention_mask, labels=task_labels, )
-            outputs = model(input_ids, attention_mask=attention_mask, task_labels=task_labels, tc_labels=tc_labels, cc_labels=cc_labels)
+            outputs = model(input_ids, attention_mask=attention_mask, lm_labels=lm_labels, tc_labels=tc_labels, cc_labels=cc_labels)
 
             loss = outputs[0]
+            total_loss += loss / len(batch)
+
             loss.backward()
             optim.step()
+        print(f"epoch: {epoch:3d} loss: {total_loss:.3f}")
 
-    model.eval()
+    model.bert.save_pretrained(save_directory=f'{SENTIMENT_ACCEPTABILITY_DOMAIN_DIR}/saved_models/bert__{time_str}')
 
 
 if __name__ == '__main__':

@@ -1,8 +1,8 @@
 import torch
 from datasets import load_dataset, ClassLabel, Features, Value
 from torch.utils.data import Dataset
-from transformers import BertTokenizerFast
-
+from transformers import BertTokenizerFast, Trainer
+from transformers.trainer import Trainer
 from utils import DATA_DIR, RANDOM_SEED
 
 
