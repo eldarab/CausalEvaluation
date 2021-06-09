@@ -108,7 +108,7 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
                 raise NotImplementedError()
 
         total_loss = None
-        if lm_labels is not None and tc_labels is not None:
+        if lm_labels is not None and tc_labels is not None and cc_labels is not None:
             loss_fct = CrossEntropyLoss()
 
             # LM loss
@@ -116,7 +116,7 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
 
             # Treated concepts loss, note the minus
             for tc_head_score, tc_head_cfg in zip(tc_heads_scores, self.config.tc_heads_cfg):
-                total_loss -= loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
+                total_loss -= self.config.tc_lambda * loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
 
             # Control concepts loss
             for cc_head_score, cc_head_cfg in zip(cc_heads_scores, self.config.cc_heads_cfg):

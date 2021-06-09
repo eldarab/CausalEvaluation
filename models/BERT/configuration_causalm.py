@@ -45,12 +45,14 @@ class BertCausalmConfig(BertConfig):
             self,
             tc_heads_cfg: List[CausalmHeadConfig] = None,
             cc_heads_cfg: List[CausalmHeadConfig] = None,
+            tc_lambda: float = 0.2,
             **kwargs
     ):
         super().__init__(**kwargs)
 
         self.tc_heads_cfg = tc_heads_cfg
         self.cc_heads_cfg = cc_heads_cfg
+        self.tc_lambda = tc_lambda
 
     def __repr__(self):
         return f"{self.__class__.__name__} {self.to_json_string(use_diff=True)}"
