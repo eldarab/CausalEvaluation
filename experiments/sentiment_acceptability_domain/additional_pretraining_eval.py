@@ -12,7 +12,7 @@ from transformers.models.bert.modeling_bert import BertForSequenceClassification
 
 from experiments.sentiment_acceptability_domain.dataset import CaribbeanDataset
 from models.BERT.configuration_causalm import BertCausalmConfig
-from utils import DATA_DIR, PROJECT_DIR
+from utils import DATA_DIR, PROJECT_DIR, SENTIMENT_ACCEPTABILITY_DOMAIN_DIR
 from utils.metrics import calc_accuracy_from_logits
 
 
@@ -28,7 +28,7 @@ def main(args):
     test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False, drop_last=True)
 
     # config
-    save_path = f'{PROJECT_DIR}/saved_models/sentiment_acceptability_domain__2021_06_06__18_52_12'
+    save_path = f'{SENTIMENT_ACCEPTABILITY_DOMAIN_DIR}/saved_models/{args.model_name}'
     config = BertCausalmConfig.from_pretrained(save_path)
     config.num_labels = 2
     config.id2label = {0: 'unacceptable', 1: 'acceptable'}
@@ -40,8 +40,8 @@ def main(args):
     model.to(device)
     model.train()
 
-    print('======== CONTROL MODEL ========')
-    train(model, train_loader, device, test_loader)
+    # print('======== CONTROL MODEL ========')
+    # train(model, train_loader, device, test_loader)
 
     model.bert = BertModel.from_pretrained(save_path)
     model.to(device)
@@ -50,14 +50,14 @@ def main(args):
     print('======== TREATED MODEL ========')
     train(model, train_loader, device, test_loader)
 
-    base_test_acc = sum([item['task_label'] for item in test_dataset]) / len(test_dataset)
+    base_test_acc = sum([item['tc_label'] for item in test_dataset]) / len(test_dataset)
     print(f'Baseline test accuracy: {base_test_acc:.3f} for {len(test_dataset)} eval samples.')
 
 
 def train(model, train_loader, device, test_loader):
     optim = AdamW(model.parameters(), lr=5e-5)
 
-    for epoch in range(20):
+    for epoch in range(10):
         train_loss = 0
         train_acc = 0
         for batch in tqdm(train_loader, desc=f'epoch {epoch}'):
@@ -68,11 +68,11 @@ def train(model, train_loader, device, test_loader):
             tc_labels = batch['tc_label'].to(device)
             task_labels = batch['task_label'].to(device)
 
-            outputs = model(input_ids, attention_mask=attention_mask, labels=task_labels)
+            outputs = model(input_ids, attention_mask=attention_mask, labels=tc_labels)
 
             loss = outputs[0]
             with torch.no_grad():
-                train_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=task_labels, model=model)[0] / len(train_loader)
+                train_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=tc_labels, model=model)[0] / len(train_loader)
             train_loss += loss / len(batch)
 
             loss.backward()
@@ -87,10 +87,10 @@ def train(model, train_loader, device, test_loader):
                 tc_labels = batch['tc_label'].to(device)
                 task_labels = batch['task_label'].to(device)
 
-                outputs = model(input_ids, attention_mask=attention_mask, labels=task_labels)
+                outputs = model(input_ids, attention_mask=attention_mask, labels=tc_labels)
 
                 eval_loss += outputs[0] / len(batch)
-                eval_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=task_labels, model=model)[0] / len(test_loader)
+                eval_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=tc_labels, model=model)[0] / len(test_loader)
 
         print(f"train loss: {train_loss:.3f} train accuracy: {train_acc:.3f}\n"
               f"eval loss:  {eval_loss:.3f}  eval accuracy:  {eval_acc:.3f}\n")
@@ -98,6 +98,6 @@ def train(model, train_loader, device, test_loader):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model-name', type=str, required=True, help='The name of the model to load.')
+    parser.add_argument('--model_name', type=str, required=True, help='The name of the model to load.')
 
     main(parser.parse_args())

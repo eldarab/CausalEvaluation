@@ -1,15 +1,14 @@
 import time
 
 import torch
-from datasets import load_dataset, ClassLabel, Features, Value
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import BertTokenizerFast, AdamW, BertForPreTraining, BertConfig, DataCollatorForLanguageModeling
+from transformers import BertTokenizerFast, AdamW, DataCollatorForLanguageModeling
 
 from experiments.sentiment_acceptability_domain.dataset import CaribbeanDataset
 from models.BERT.bert_causalm import BertForCausalmAdditionalPreTraining
 from models.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
-from utils import DATA_DIR, RANDOM_SEED, SENTIMENT_ACCEPTABILITY_DOMAIN_DIR
+from utils import DATA_DIR, PROJECT_DIR
 from utils import SEQUENCE_CLASSIFICATION
 
 
@@ -56,7 +55,7 @@ def main():
             optim.step()
         print(f"loss: {total_loss:.3f}")
 
-    save_dir = f'{SENTIMENT_ACCEPTABILITY_DOMAIN_DIR}/saved_models/sentiment_acceptability_domain__{time_str}'
+    save_dir = f'{PROJECT_DIR}/saved_models/sentiment_acceptability_domain__{time_str}'
     model.bert.save_pretrained(save_directory=save_dir)
     print(f'Saved model.bert in {save_dir}')
 
