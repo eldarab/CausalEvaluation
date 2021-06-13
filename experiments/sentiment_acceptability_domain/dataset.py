@@ -19,15 +19,15 @@ class CaribbeanDataset(Dataset):
         tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
 
         self.encodings = tokenizer(dataset[fold]['text'], truncation=True, padding=True)
-        self.task_labels = dataset[fold]['sentiment'],
-        self.tc_labels = dataset[fold]['acceptability_sophiemarshall2'],
-        self.cc_labels = dataset[fold]['is_books'],
+        self.task_labels = dataset[fold]['sentiment']
+        self.tc_labels = dataset[fold]['acceptability_sophiemarshall2']
+        self.cc_labels = dataset[fold]['is_books']
 
     def __getitem__(self, idx):
         item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        item['task_labels'] = torch.tensor(self.task_labels[idx])
-        item['tc_labels'] = torch.tensor(self.tc_labels[idx])
-        item['cc_labels'] = torch.tensor(self.cc_labels[idx])
+        item['task_label'] = torch.tensor(self.task_labels[idx])
+        item['tc_label'] = torch.tensor(self.tc_labels[idx])
+        item['cc_label'] = torch.tensor(self.cc_labels[idx])
         return item
 
     def __len__(self):
