@@ -5,3 +5,6 @@
 
 ## Purpose:
 Evaluation.
+
+## Experiments
+All experiments appear under "experiments" folder, and include a detailed README file regarding the experiment.
