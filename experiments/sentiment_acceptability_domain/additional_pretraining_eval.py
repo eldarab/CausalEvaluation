@@ -1,11 +1,13 @@
 # Check that the model forgot the TC and remembered MLM and CC
 import argparse
+import sys
+
+sys.path.append('/home/eldar.a/CausalEvaluation')
 
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AdamW
-from transformers.models.auto.tokenization_auto import BertTokenizerFast
 from transformers.models.bert.modeling_bert import BertForSequenceClassification, BertModel
 
 from experiments.sentiment_acceptability_domain.dataset import CaribbeanDataset
@@ -48,12 +50,12 @@ def main(args):
     print('======== TREATED MODEL ========')
     train(model, train_loader, device, test_loader)
 
-    base_test_acc = sum([item['tc_label'] for item in test_dataset]) / len(test_dataset)
+    base_test_acc = sum([item['task_label'] for item in test_dataset]) / len(test_dataset)
     print(f'Baseline test accuracy: {base_test_acc:.3f} for {len(test_dataset)} eval samples.')
 
 
 def train(model, train_loader, device, test_loader):
-    optim = AdamW(model.parameters(), lr=5e-4)
+    optim = AdamW(model.parameters(), lr=5e-5)
 
     for epoch in range(20):
         train_loss = 0
@@ -64,12 +66,13 @@ def train(model, train_loader, device, test_loader):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             tc_labels = batch['tc_label'].to(device)
+            task_labels = batch['task_label'].to(device)
 
-            outputs = model(input_ids, attention_mask=attention_mask, labels=tc_labels)
+            outputs = model(input_ids, attention_mask=attention_mask, labels=task_labels)
 
             loss = outputs[0]
             with torch.no_grad():
-                train_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=tc_labels, model=model)[0] / len(train_loader)
+                train_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=task_labels, model=model)[0] / len(train_loader)
             train_loss += loss / len(batch)
 
             loss.backward()
@@ -82,11 +85,12 @@ def train(model, train_loader, device, test_loader):
                 input_ids = batch['input_ids'].to(device)
                 attention_mask = batch['attention_mask'].to(device)
                 tc_labels = batch['tc_label'].to(device)
+                task_labels = batch['task_label'].to(device)
 
-                outputs = model(input_ids, attention_mask=attention_mask, labels=tc_labels)
+                outputs = model(input_ids, attention_mask=attention_mask, labels=task_labels)
 
                 eval_loss += outputs[0] / len(batch)
-                eval_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=tc_labels, model=model)[0] / len(test_loader)
+                eval_acc += calc_accuracy_from_logits(outputs=outputs[1], true_labels=task_labels, model=model)[0] / len(test_loader)
 
         print(f"train loss: {train_loss:.3f} train accuracy: {train_acc:.3f}\n"
               f"eval loss:  {eval_loss:.3f}  eval accuracy:  {eval_acc:.3f}\n")
@@ -95,6 +99,5 @@ def train(model, train_loader, device, test_loader):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model-name', type=str, required=True, help='The name of the model to load.')
-    args = parser.parse_args()
 
-    main(args)
+    main(parser.parse_args())
