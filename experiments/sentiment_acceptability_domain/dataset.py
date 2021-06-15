@@ -25,9 +25,10 @@ class CaribbeanDataset(Dataset):
 
     def __getitem__(self, idx):
         item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        item['task_label'] = torch.tensor(self.task_labels[idx])
-        item['tc_label'] = torch.tensor(self.tc_labels[idx])
-        item['cc_label'] = torch.tensor(self.cc_labels[idx])
+        # item['task_label'] = torch.tensor(self.task_labels[idx])
+        # item['tc_label'] = torch.tensor(self.tc_labels[idx])
+        # item['cc_label'] = torch.tensor(self.cc_labels[idx])
+        item['label'] = torch.tensor(self.cc_labels[idx])
         return item
 
     def __len__(self):
