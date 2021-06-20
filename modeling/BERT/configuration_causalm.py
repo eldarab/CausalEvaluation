@@ -53,6 +53,7 @@ class BertCausalmConfig(BertConfig):
         self.tc_heads_cfg = tc_heads_cfg
         self.cc_heads_cfg = cc_heads_cfg
         self.tc_lambda = tc_lambda
+        self.sequence_classifier_type = kwargs.pop("sequence_classifier_type", None)
 
     def __repr__(self):
         return f"{self.__class__.__name__} {self.to_json_string(use_diff=True)}"
