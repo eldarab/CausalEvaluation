@@ -1,47 +1,71 @@
 import torch
-from datasets import load_dataset, ClassLabel, Features, Value
+import pandas as pd
 from torch.utils.data import Dataset
 from transformers import BertTokenizerFast
+from pathlib import Path
 
-from utils import DATA_DIR, RANDOM_SEED
+from utils import DATA_DIR, BERT_MODEL_CHECKPOINT
 
 
-class CaribbeanDataset(Dataset):
-    def __init__(self, data_path, fold='train'):
-        features = Features({
-            'text': Value(dtype='string', id='text'),
-            'acceptability_sophiemarshall2': ClassLabel(num_classes=2, names=['unacceptable', 'acceptable'], id='acceptability'),
-            'is_books': ClassLabel(num_classes=2, names=['not_books', 'books'], id='is_books'),
-            'sentiment': ClassLabel(num_classes=2, names=['negative', 'positive'], id='sentiment'),
-        })
-        dataset = load_dataset('csv', data_files=[data_path], index_col=0, features=features)
-        dataset = dataset['train'].train_test_split(test_size=0.2, seed=RANDOM_SEED)
-        tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
+class SADDataset(Dataset):
+    def __init__(
+            self,
+            data_dir: str,
+            fold: str = 'train',
+            textual_counterfactual=False,
+            conexp_fold=None
+    ):
+        data_dir = Path(data_dir)
 
-        self.encodings = tokenizer(dataset[fold]['text'], truncation=True, padding=True)
-        self.task_labels = dataset[fold]['sentiment']
-        self.tc_labels = dataset[fold]['acceptability_sophiemarshall2']
-        self.cc_labels = dataset[fold]['is_books']
+        if fold not in {'train', 'val', 'test'}:
+            raise RuntimeError(f'Illegal fold "{fold}"')
+
+        if textual_counterfactual and fold != 'test':
+            raise RuntimeError(f'There exists no textual counterfactuals for fold "{fold}"')
+
+        df = pd.read_csv(data_dir / f'SAD_{fold}.csv', index_col=0)
+
+        if fold == 'test' and conexp_fold == 'acceptable':
+            df = df[df['acceptability_sophiemarshall2'] == 1]
+        if fold == 'test' and conexp_fold == 'unacceptable':
+            df = df[df['acceptability_sophiemarshall2'] == 0]
+
+        tokenizer = BertTokenizerFast.from_pretrained(BERT_MODEL_CHECKPOINT)
+
+        self.conexp_fold = conexp_fold
+        self.textual_counterfactual = textual_counterfactual
+        self.fold = fold
+        if fold == 'test' and self.textual_counterfactual:
+            self.text_acceptability_cf = df['acceptability_cf_amitavasil']
+            self.encodings_acceptability_textual_cf = tokenizer(list(df['acceptability_cf_amitavasil']), truncation=True, padding=True)
+        else:
+            self.text = df['text']
+            self.encodings = tokenizer(list(df['text']), truncation=True, padding=True)
+        self.task_labels = df['sentiment']
+        self.tc_labels = df['acceptability_sophiemarshall2']
+        self.cc_labels = df['is_books']
 
     def __getitem__(self, idx):
-        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        # item['task_label'] = torch.tensor(self.task_labels[idx])
-        # item['tc_label'] = torch.tensor(self.tc_labels[idx])
-        # item['cc_label'] = torch.tensor(self.cc_labels[idx])
-        item['label'] = torch.tensor(self.cc_labels[idx])
+        if self.fold == 'test' and self.textual_counterfactual:
+            item = {key: torch.tensor(val[idx]) for key, val in self.encodings_acceptability_textual_cf.items()}
+        else:
+            item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['task_label'] = torch.tensor(self.task_labels[idx])
+        item['tc_label'] = torch.tensor(self.tc_labels[idx])
+        item['cc_label'] = torch.tensor(self.cc_labels[idx])
         return item
 
     def __len__(self):
         return len(self.task_labels)
 
 
-def test_caribbean_dataset():
-    train_dataset = CaribbeanDataset(data_path=f'{DATA_DIR}/acceptability_sample.csv', fold='train')
-    test_dataset = CaribbeanDataset(data_path=f'{DATA_DIR}/acceptability_sample.csv', fold='test')
+def gen_caribbean_dataset():
+    train_dataset = SADDataset(data_dir=DATA_DIR, fold='train')
+    test_dataset = SADDataset(data_dir=DATA_DIR, fold='test')
 
     print(train_dataset[0])
     print(test_dataset[0])
 
 
 if __name__ == '__main__':
-    test_caribbean_dataset()
+    gen_caribbean_dataset()
