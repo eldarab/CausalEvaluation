@@ -1,13 +1,14 @@
 import torch
 import pandas as pd
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset as PyTorchDataset
 from transformers import BertTokenizerFast
 from pathlib import Path
+from datasets import Dataset as HuggingFaceDataset
 
 from utils import DATA_DIR, BERT_MODEL_CHECKPOINT
 
 
-class SADDataset(Dataset):
+class SADDataset(PyTorchDataset):
     def __init__(
             self,
             data_dir: str,

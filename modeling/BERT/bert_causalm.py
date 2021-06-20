@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional, Tuple
+import sys
+
+sys.path.append('/home/eldar.a/CausalEvaluation/')
 
 import torch
 import torch.nn as nn
@@ -78,9 +81,9 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            lm_labels=None,
-            tc_labels=None,
-            cc_labels=None,
+            lm_label=None,
+            tc_label=None,
+            cc_label=None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -108,19 +111,19 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
                 raise NotImplementedError()
 
         total_loss = None
-        if lm_labels is not None and tc_labels is not None and cc_labels is not None:
+        if lm_label is not None and tc_label is not None and cc_label is not None:
             loss_fct = CrossEntropyLoss()
 
             # LM loss
-            total_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), lm_labels.view(-1))
+            total_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), lm_label.view(-1))
 
             # Treated concepts loss, note the minus
             for tc_head_score, tc_head_cfg in zip(tc_heads_scores, self.config.tc_heads_cfg):
-                total_loss -= self.config.tc_lambda * loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
+                total_loss -= self.config.tc_lambda * loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_label.view(-1))
 
             # Control concepts loss
             for cc_head_score, cc_head_cfg in zip(cc_heads_scores, self.config.cc_heads_cfg):
-                total_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_labels.view(-1))
+                total_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_label.view(-1))
 
         if not return_dict:
             output = (mlm_head_scores, tc_heads_scores, cc_heads_scores) + outputs[2:]

@@ -1,26 +1,39 @@
 import time
 
+import datasets
 import numpy as np
-from datasets import load_metric
+from datasets import load_metric, Features, Value, ClassLabel, load_dataset
+from datasets import Dataset as HuggingFaceDataset
 
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-from transformers import BertTokenizerFast, DataCollatorForLanguageModeling, AdamW, BertTokenizer, BertModel, TrainingArguments, Trainer
+from transformers import BertTokenizerFast, DataCollatorForLanguageModeling, BertTokenizer, BertModel, TrainingArguments, Trainer
 
 from experiments.sentiment_acceptability_domain.dataset import SADDataset
 from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForSequenceClassification
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
-from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, DEVICE, PROJECT_DIR
+from modeling.BERT.trainer_causalm import CausalmTrainingArguments, CausalmTrainer
+from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, PROJECT_DIR
 
 
 def additional_pretraining_pipeline():
     time_str = time.strftime('%Y_%m_%d__%H_%M_%S')
 
-    # data
-    train_dataset = SADDataset(data_dir=f'{DATA_DIR}/acceptability_sample.csv', fold='train')
+    data_file = DATA_DIR / 'SAD_train.csv'
+    # huggingface data
+    features = Features({
+        'text': Value(dtype='string', id='text'),
+        'acceptability_sophiemarshall2': ClassLabel(num_classes=2, names=['unacceptable', 'acceptable'], id='acceptability'),
+        'is_books': ClassLabel(num_classes=2, names=['not_books', 'books'], id='is_books'),
+        'sentiment': ClassLabel(num_classes=2, names=['negative', 'positive'], id='sentiment'),
+    })
+    dataset = load_dataset('csv', data_files=[str(data_file)], index_col=0, features=features)
+
+    # pytorch data
+    train_dataset = SADDataset(data_dir=DATA_DIR, fold='train')
     tokenizer = BertTokenizerFast.from_pretrained(BERT_MODEL_CHECKPOINT)
     lm_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=0.15)
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, collate_fn=lm_data_collator)
+
+    preprocess_function = lambda examples: tokenizer(examples['text'], truncation=True, padding=True)
+    dataset = dataset.map(preprocess_function, batched=True)
 
     # model
     config = BertCausalmConfig(
@@ -29,34 +42,37 @@ def additional_pretraining_pipeline():
         tc_lambda=0.2,
     )
     model = BertForCausalmAdditionalPreTraining(config)
-    model.to(DEVICE)
-    model.train()
 
-    optim = AdamW(model.parameters(), lr=2e-5)
+    # training
+    args = CausalmTrainingArguments(
+        'sanity_check',
+        evaluation_strategy='epoch',
+        learning_rate=2e-5,
+        per_device_train_batch_size=64,
+        per_device_eval_batch_size=64,
+        num_train_epochs=10,
+        weight_decay=0.01,
+        load_best_model_at_end=True,
+        save_strategy='no',
+        label_names=['labels', 'cc_label', 'tc_label'],
+        causalm_additional_pretraining=True,
+        num_cc=1,
+        num_tc=1
+    )
 
-    for epoch in range(10):
-        total_loss = 0
-        for batch in tqdm(train_loader, desc=f'epoch {epoch:3d}'):
-            optim.zero_grad()
+    trainer = CausalmTrainer(
+        model,
+        args,
+        train_dataset=train_dataset,
+        data_collator=lm_data_collator,
+        tokenizer=tokenizer,
+    )
 
-            input_ids = batch['input_ids'].to(DEVICE)
-            attention_mask = batch['attention_mask'].to(DEVICE)
-            lm_labels = batch['labels'].to(DEVICE)
-            tc_labels = batch['tc_label'].to(DEVICE)
-            cc_labels = batch['cc_label'].to(DEVICE)
-
-            outputs = model(input_ids, attention_mask=attention_mask, lm_labels=lm_labels, tc_labels=tc_labels, cc_labels=cc_labels)
-
-            loss = outputs[0]
-            total_loss += loss / len(batch)
-
-            loss.backward()
-            optim.step()
-        print(f"loss: {total_loss:.3f}")
+    trainer.train()
 
     save_dir = f'{PROJECT_DIR}/saved_models/SAD__{time_str}'
     model.bert.save_pretrained(save_directory=save_dir)
-    print(f'Saved model.bert in {save_dir}')
+    print(f'>>> Saved model.bert in {save_dir}')
 
 
 def downstream_task_training_pipeline(
@@ -127,6 +143,9 @@ def downstream_task_training_pipeline(
 
 
 if __name__ == '__main__':
+    # mlm, tc, cc
+    additional_pretraining_pipeline()
+
     # compute CONEXP
     bert_o_acceptable_accuracy = downstream_task_training_pipeline(
         train_dataset=SADDataset(data_dir=DATA_DIR, fold='train'),

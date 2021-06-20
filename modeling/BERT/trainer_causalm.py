@@ -2,10 +2,13 @@ from typing import Dict, Union, Any, Optional, List, Tuple
 
 import torch
 import torch.nn as nn
+from torch.cuda import amp
 from torch.cuda.amp import autocast
+from transformers.file_utils import is_sagemaker_mp_enabled
 from transformers.trainer import Trainer, TrainingArguments
-from transformers.trainer_pt_utils import nested_detach
-from dataclasses import field
+if is_sagemaker_mp_enabled():
+    from transformers.trainer_pt_utils import smp_forward_backward
+from dataclasses import field, dataclass
 
 
 class CausalmTrainer(Trainer):
@@ -111,9 +114,45 @@ class CausalmTrainer(Trainer):
 
         return loss, logits, labels
 
+    def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+        model.train()
+        inputs = self._prepare_inputs(inputs)
 
+        if is_sagemaker_mp_enabled():
+            scaler = self.scaler if self.use_amp else None
+            loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps, scaler=scaler)
+            return loss_mb.reduce_mean().detach().to(self.args.device)
+
+        if self.use_amp:
+            with autocast():
+                loss = self.compute_loss(model, inputs)
+        else:
+            loss = self.compute_loss(model, inputs)
+
+        if self.args.n_gpu > 1:
+            loss = loss.mean()  # mean() to average on multi-gpu parallel training
+
+        if self.args.gradient_accumulation_steps > 1 and not self.deepspeed:
+            # deepspeed handles loss scaling by gradient_accumulation_steps in its `backward`
+            loss = loss / self.args.gradient_accumulation_steps
+
+        if self.use_amp:
+            self.scaler.scale(loss).backward()
+        elif self.use_apex:
+            with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                scaled_loss.backward()
+        elif self.deepspeed:
+            # loss gets scaled under gradient_accumulation_steps in deepspeed
+            loss = self.deepspeed.backward(loss)
+        else:
+            loss.backward()
+
+        return loss.detach()
+
+
+@dataclass
 class CausalmTrainingArguments(TrainingArguments):
-    causalm_additional_pretraining: str = field(
+    causalm_additional_pretraining: bool = field(
         default=False,
         metadata={"help": "Whether or not this CausaLM trainer performs additional pretraining."},
     )
