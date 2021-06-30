@@ -6,6 +6,7 @@ from torch.cuda import amp
 from torch.cuda.amp import autocast
 from transformers.file_utils import is_sagemaker_mp_enabled
 from transformers.trainer import Trainer, TrainingArguments
+from transformers.trainer_pt_utils import nested_detach
 if is_sagemaker_mp_enabled():
     from transformers.trainer_pt_utils import smp_forward_backward
 from dataclasses import field, dataclass
