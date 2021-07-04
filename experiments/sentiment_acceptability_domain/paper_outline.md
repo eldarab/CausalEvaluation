@@ -15,7 +15,9 @@
 #### Acceptability
 #### Gender
 #### Product specific
-#### 
+DRF vs. Human Annotator
+#### Formality?
+
 
 ### Details (Technicalities)
 * How much data
@@ -35,4 +37,8 @@
 * Discussion
 * Future work
 
--- 4 pages +/-
+**Misc**
+* 4 pages +/-
+* 'How to Write a Good Paper - by Eldar'
+* Predicted sentiment vs. Generating sentiment
+* Flip causal graphs!

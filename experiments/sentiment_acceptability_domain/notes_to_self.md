@@ -44,3 +44,17 @@
 7. Choose among these experiments the best ones.
 8. Start writing 18.07.2021
 
+
+## Code assignments
+* Token-level classification.
+* INLP Baseline.
+* Make sure metrics are correct.
+* Aggressive-correlation experiments.
+* Full experimental pipeline:
+   * Did we forget the TC?
+   * Did we remember the CC?
+   * ATE_gt
+   * INLP_ATE
+   * CONEXP
+   * TReATE
+   * BERT-O
