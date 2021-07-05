@@ -20,7 +20,7 @@ def additional_pretraining_pipeline(
         epochs=5,
         save_dir=None
 ):
-    data_collator = DataCollatorForCausalmAdditionalPretraining(tokenizer=tokenizer, mlm_probability=0.15, cc_token=True, tc_token=True)
+    data_collator = DataCollatorForCausalmAdditionalPretraining(tokenizer=tokenizer, mlm_probability=0.15, collate_tc=True, collate_cc=True)
 
     # model
     config = BertCausalmConfig(
@@ -33,7 +33,7 @@ def additional_pretraining_pipeline(
     # training
     # noinspection PyTypeChecker
     args = CausalmTrainingArguments(
-        'sanity_check',
+        'product_ner_domain',
         evaluation_strategy='epoch',
         learning_rate=2e-5,
         per_device_train_batch_size=32,

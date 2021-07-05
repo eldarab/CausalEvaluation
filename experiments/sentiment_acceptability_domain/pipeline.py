@@ -9,7 +9,7 @@ from transformers import logging
 from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForSequenceClassification
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
 from modeling.BERT.trainer_causalm import CausalmTrainingArguments, CausalmTrainer
-from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, PROJECT_DIR, CausalmMetrics
+from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, PROJECT_DIR, CausalmMetrics, DataCollatorForCausalmAdditionalPretraining
 
 
 def additional_pretraining_pipeline(
@@ -19,7 +19,7 @@ def additional_pretraining_pipeline(
         epochs=5,
         save_dir=None
 ):
-    lm_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=0.15)
+    lm_data_collator = DataCollatorForCausalmAdditionalPretraining(tokenizer=tokenizer, mlm_probability=0.15)
 
     # model
     config = BertCausalmConfig(

@@ -97,7 +97,7 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            mlm_labels=None,  # lm_label
+            mlm_labels=None,
             tc_labels=None,
             cc_labels=None,
             output_attentions=None,
