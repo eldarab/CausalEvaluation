@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 from transformers.file_utils import ModelOutput
-from transformers.modeling_outputs import SequenceClassifierOutput
+from transformers.modeling_outputs import SequenceClassifierOutput, TokenClassifierOutput
 from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertModel, BertLMPredictionHead
 
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
@@ -29,18 +29,32 @@ class BertCausalmAdditionalPreTrainingHeads(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.mlm_head = BertLMPredictionHead(config)
-        self.tc_heads = self.__init_causalm_heads(config, 'tc')
-        self.cc_heads = self.__init_causalm_heads(config, 'cc')
+        self.tc_heads, self.tc_heads_types = self.__init_causalm_heads(config, 'tc')
+        self.cc_heads, self.cc_heads_types = self.__init_causalm_heads(config, 'cc')
 
     def forward(self, sequence_output, pooled_output):
         mlm_head_scores = self.mlm_head(sequence_output)
-        tc_heads_scores = [tc_head(pooled_output) for tc_head in self.tc_heads]
-        cc_heads_scores = [cc_head(pooled_output) for cc_head in self.cc_heads]
+
+        tc_heads_scores = []
+        for tc_head, head_type in zip(self.tc_heads.values(), self.tc_heads_types):
+            if head_type == SEQUENCE_CLASSIFICATION:
+                tc_heads_scores.append(tc_head(pooled_output))
+            elif head_type == TOKEN_CLASSIFICATION:
+                tc_heads_scores.append(tc_head(sequence_output))
+
+        cc_heads_scores = []
+        for cc_head, head_type in zip(self.cc_heads.values(), self.cc_heads_types):
+            if head_type == SEQUENCE_CLASSIFICATION:
+                cc_heads_scores.append(cc_head(pooled_output))
+            elif head_type == TOKEN_CLASSIFICATION:
+                cc_heads_scores.append(cc_head(sequence_output))
+
         return mlm_head_scores, tc_heads_scores, cc_heads_scores
 
     @staticmethod
     def __init_causalm_heads(config, mode):
-        heads = nn.ModuleList()
+        heads = nn.ModuleDict()
+        head_types = []
 
         if mode == 'tc':
             heads_cfg = config.tc_heads_cfg
@@ -50,14 +64,16 @@ class BertCausalmAdditionalPreTrainingHeads(nn.Module):
             raise RuntimeError(f'Illegal mode: "{mode}". Can be either "tc" or "cc".')
 
         for head_cfg in heads_cfg:
-            if head_cfg.head_type == SEQUENCE_CLASSIFICATION:
-                heads.append(nn.Sequential(
+            if head_cfg.head_type == SEQUENCE_CLASSIFICATION or head_cfg.head_type == TOKEN_CLASSIFICATION:
+                heads[head_cfg.head_name] = nn.Sequential(
                     nn.Dropout(head_cfg.hidden_dropout_prob),
                     nn.Linear(config.hidden_size, head_cfg.num_labels)
-                ))
-            elif head_cfg.head_type == TOKEN_CLASSIFICATION:
+                )
+            else:
                 raise NotImplementedError()
-        return heads
+
+            head_types.append(head_cfg.head_type)
+        return heads, head_types
 
 
 class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
@@ -159,19 +175,19 @@ class BertCausalmForSequenceClassification(BertPreTrainedModel):
         self.init_weights()
 
     def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        task_label=None,
-        cc_label=None,
-        tc_label=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
+            self,
+            input_ids=None,
+            attention_mask=None,
+            token_type_ids=None,
+            position_ids=None,
+            head_mask=None,
+            inputs_embeds=None,
+            task_label=None,
+            cc_label=None,
+            tc_label=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -240,10 +256,104 @@ class BertCausalmForSequenceClassification(BertPreTrainedModel):
         )
 
 
+class BertCausalmForTokenClassification(BertPreTrainedModel):
+    config_class = BertCausalmConfig
+    base_model_prefix = "bert_causalm"
+
+    def __init__(self, config: BertCausalmConfig):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+        self.config = config
+
+        if self.config.token_classifier_type not in {'task', 'cc', 'tc'}:
+            raise RuntimeError(f'Illegal token_classifier_type {self.config.token_classifier_type}')
+        self.classifier_type = self.config.token_classifier_type
+
+        self.bert = BertModel(config, add_pooling_layer=False)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+        self.init_weights()
+
+    def forward(
+            self,
+            input_ids=None,
+            attention_mask=None,
+            token_type_ids=None,
+            position_ids=None,
+            head_mask=None,
+            inputs_embeds=None,
+            task_label=None,
+            cc_label=None,
+            tc_label=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+    ):
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.bert(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        sequence_output = outputs[0]
+
+        sequence_output = self.dropout(sequence_output)
+        logits = self.classifier(sequence_output)
+
+        labels = None
+        if self.classifier_type == 'task':
+            labels = task_label
+        elif self.classifier_type == 'cc':
+            labels = cc_label
+        elif self.classifier_type == 'tc':
+            labels = tc_label
+
+        loss = None
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            # Only keep active parts of the loss
+            if attention_mask is not None:
+                active_loss = attention_mask.view(-1) == 1
+                active_logits = logits.view(-1, self.num_labels)
+                active_labels = torch.where(
+                    active_loss, labels.view(-1), torch.tensor(loss_fct.ignore_index).type_as(labels)
+                )
+                loss = loss_fct(active_logits, active_labels)
+            else:
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        return TokenClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+
 def test_caribbean_bert():
     config = BertCausalmConfig(
-        tc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION, head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})],
-        cc_heads_cfg=[CausalmHeadConfig(head_type=SEQUENCE_CLASSIFICATION, head_params={'hidden_dropout_prob': 0.0, 'num_labels': 2})]
+        tc_heads_cfg=[CausalmHeadConfig(head_name='acceptability', head_type=SEQUENCE_CLASSIFICATION, head_params={'num_labels': 2}),
+                      CausalmHeadConfig(head_name='product_specific', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': 6})],
+        cc_heads_cfg=[CausalmHeadConfig(head_name='is_books', head_type=SEQUENCE_CLASSIFICATION, head_params={'num_labels': 2}),
+                      CausalmHeadConfig(head_name='NER', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': 10})],
+        tc_lambda=0.2,
     )
-    caribbean_bert = BertForCausalmAdditionalPreTraining(config)
-    caribbean_bert(5)
+    model = BertForCausalmAdditionalPreTraining(config)
+    print(model)
+
+
+if __name__ == '__main__':
+    test_caribbean_bert()

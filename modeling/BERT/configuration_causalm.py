@@ -24,11 +24,10 @@ class CausalmHeadConfig(PretrainedConfig):
         self.head_name = head_name
         self.head_type = head_type
 
-        if head_type == SEQUENCE_CLASSIFICATION:
+        if head_type == SEQUENCE_CLASSIFICATION or head_type == TOKEN_CLASSIFICATION:
             self.hidden_dropout_prob = head_params.pop('hidden_dropout_prob', 0.0)
             self.num_labels = head_params.pop('num_labels', 2)
-
-        if head_type == TOKEN_CLASSIFICATION:
+        else:
             raise NotImplementedError()
 
     def __repr__(self):
@@ -54,6 +53,7 @@ class BertCausalmConfig(BertConfig):
         self.cc_heads_cfg = cc_heads_cfg
         self.tc_lambda = tc_lambda
         self.sequence_classifier_type = kwargs.pop("sequence_classifier_type", None)
+        self.token_classifier_type = kwargs.pop("token_classifier_type", None)
 
     def __repr__(self):
         return f"{self.__class__.__name__} {self.to_json_string(use_diff=True)}"
