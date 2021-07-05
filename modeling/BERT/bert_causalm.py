@@ -97,9 +97,9 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            labels=None,  # lm_label
-            tc_label=None,
-            cc_label=None,
+            mlm_labels=None,  # lm_label
+            tc_labels=None,
+            cc_labels=None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -127,19 +127,19 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
                 raise NotImplementedError()
 
         total_loss = None
-        if labels is not None and tc_label is not None and cc_label is not None:
+        if mlm_labels is not None and tc_labels is not None and cc_labels is not None:
             loss_fct = CrossEntropyLoss()
 
             # LM loss
-            total_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), labels.view(-1))
+            total_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), mlm_labels.view(-1))
 
             # Treated concepts loss, note the minus
             for tc_head_score, tc_head_cfg in zip(tc_heads_scores, self.config.tc_heads_cfg):
-                total_loss -= self.config.tc_lambda * loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_label.view(-1))
+                total_loss -= self.config.tc_lambda * loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
 
             # Control concepts loss
             for cc_head_score, cc_head_cfg in zip(cc_heads_scores, self.config.cc_heads_cfg):
-                total_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_label.view(-1))
+                total_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_labels.view(-1))
 
         if not return_dict:
             output = (mlm_head_scores, tc_heads_scores, cc_heads_scores) + outputs[2:]
@@ -182,9 +182,9 @@ class BertCausalmForSequenceClassification(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            task_label=None,
-            cc_label=None,
-            tc_label=None,
+            task_labels=None,
+            cc_labels=None,
+            tc_labels=None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -216,11 +216,11 @@ class BertCausalmForSequenceClassification(BertPreTrainedModel):
 
         labels = None
         if self.classifier_type == 'task':
-            labels = task_label
+            labels = task_labels
         elif self.classifier_type == 'cc':
-            labels = cc_label
+            labels = cc_labels
         elif self.classifier_type == 'tc':
-            labels = tc_label
+            labels = tc_labels
 
         loss = None
         if labels is not None:
@@ -283,9 +283,9 @@ class BertCausalmForTokenClassification(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            task_label=None,
-            cc_label=None,
-            tc_label=None,
+            task_labels=None,
+            cc_labels=None,
+            tc_labels=None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -311,11 +311,11 @@ class BertCausalmForTokenClassification(BertPreTrainedModel):
 
         labels = None
         if self.classifier_type == 'task':
-            labels = task_label
+            labels = task_labels
         elif self.classifier_type == 'cc':
-            labels = cc_label
+            labels = cc_labels
         elif self.classifier_type == 'tc':
-            labels = tc_label
+            labels = tc_labels
 
         loss = None
         if labels is not None:

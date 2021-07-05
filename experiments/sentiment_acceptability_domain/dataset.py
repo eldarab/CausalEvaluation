@@ -51,9 +51,9 @@ class SADDataset(PyTorchDataset):
             item = {key: torch.tensor(val[idx]) for key, val in self.encodings_acceptability_textual_cf.items()}
         else:
             item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        item['task_label'] = torch.tensor(self.task_labels[idx])
-        item['tc_label'] = torch.tensor(self.tc_labels[idx])
-        item['cc_label'] = torch.tensor(self.cc_labels[idx])
+        item['task_labels'] = torch.tensor(self.task_labels[idx])
+        item['tc_labels'] = torch.tensor(self.tc_labels[idx])
+        item['cc_labels'] = torch.tensor(self.cc_labels[idx])
         return item
 
     def __len__(self):
