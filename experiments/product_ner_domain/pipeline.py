@@ -9,7 +9,8 @@ from transformers import logging
 from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForSequenceClassification
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
 from modeling.BERT.trainer_causalm import CausalmTrainingArguments, CausalmTrainer
-from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, PROJECT_DIR, CausalmMetrics
+from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, PROJECT_DIR, CausalmMetrics, TOKEN_CLASSIFICATION, \
+    DataCollatorForCausalmAdditionalPretraining
 
 
 def additional_pretraining_pipeline(
@@ -19,12 +20,12 @@ def additional_pretraining_pipeline(
         epochs=5,
         save_dir=None
 ):
-    lm_data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=0.15)
+    data_collator = DataCollatorForCausalmAdditionalPretraining(tokenizer=tokenizer, mlm_probability=0.15, cc_token=True, tc_token=True)
 
     # model
     config = BertCausalmConfig(
-        tc_heads_cfg=[CausalmHeadConfig(head_name='acceptability', head_type=SEQUENCE_CLASSIFICATION, head_params={'num_labels': 2})],
-        cc_heads_cfg=[CausalmHeadConfig(head_name='is_books', head_type=SEQUENCE_CLASSIFICATION, head_params={'num_labels': 2})],
+        tc_heads_cfg=[CausalmHeadConfig(head_name='product_specific', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': 2})],
+        cc_heads_cfg=[CausalmHeadConfig(head_name='product_specific', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': 2})],
         tc_lambda=0.2,
     )
     model = BertForCausalmAdditionalPreTraining(config)
@@ -53,7 +54,7 @@ def additional_pretraining_pipeline(
         args,
         eval_dataset=train_dataset if not eval_dataset else eval_dataset,
         train_dataset=train_dataset,
-        data_collator=lm_data_collator,
+        data_collator=data_collator,
         tokenizer=tokenizer,
     )
 

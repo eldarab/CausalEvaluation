@@ -40,8 +40,8 @@ class CausalmMetrics:
             return expectation / len(dataset)
 
     def conexp(self, model, dataset) -> float:
-        dataset_0 = dataset.filter(lambda example: example['tc_label'] == 0)
-        dataset_1 = dataset.filter(lambda example: example['tc_label'] == 1)
+        dataset_0 = dataset.filter(lambda example: example['tc_labels'] == 0)
+        dataset_1 = dataset.filter(lambda example: example['tc_labels'] == 1)
 
         e_0 = self.__compute_class_expectation(model, dataset_0, cls=0)
         e_1 = self.__compute_class_expectation(model, dataset_1, cls=0)
