@@ -21,6 +21,8 @@ class CausalmTrainer(Trainer):
         """
         if self.label_smoother is not None and "labels" in inputs:
             labels = inputs.pop("labels")
+        elif self.label_smoother is not None and self.label_names[0] in inputs:
+            labels = inputs.pop(self.label_names[0])
         else:
             labels = None
         outputs = model(**inputs)
@@ -149,6 +151,13 @@ class CausalmTrainer(Trainer):
             loss.backward()
 
         return loss.detach()
+
+    def train_causalm_additional_pretraining(self, tc, cc):
+        """
+        TODO: Implement train_causalm_additional_pretraining
+        Ultimately, this function will replace 'additional_pretraining_pipeline()' from pipeline.py.
+        """
+        raise NotImplementedError()
 
 
 @dataclass

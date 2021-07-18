@@ -1,8 +1,6 @@
-import copy
-import json
 from typing import List, Dict, Any
 
-from transformers import PretrainedConfig, __version__
+from transformers import PretrainedConfig
 from transformers.models.bert.configuration_bert import BertConfig
 
 from utils import HEAD_TYPES, SEQUENCE_CLASSIFICATION, TOKEN_CLASSIFICATION
@@ -49,8 +47,8 @@ class BertCausalmConfig(BertConfig):
     ):
         super().__init__(**kwargs)
 
-        self.tc_heads_cfg = tc_heads_cfg
-        self.cc_heads_cfg = cc_heads_cfg
+        self.tc_heads_cfg = tc_heads_cfg if tc_heads_cfg else []
+        self.cc_heads_cfg = cc_heads_cfg if cc_heads_cfg else []
         self.tc_lambda = tc_lambda
         self.sequence_classifier_type = kwargs.pop("sequence_classifier_type", None)
         self.token_classifier_type = kwargs.pop("token_classifier_type", None)
@@ -77,10 +75,11 @@ class BertCausalmConfig(BertConfig):
                     or value != default_config_dict[key]
                     or (key in class_config_dict and value != class_config_dict[key])
             ):
-                if isinstance(value, list) and isinstance(value[0], CausalmHeadConfig):
-                    serializable_config_dict[key] = [head.to_diff_dict() for head in value]
-                    # for head_cfg in serializable_config_dict[key]:
-                    #     head_cfg.pop('transformers_version')
+                if isinstance(value, list) and len(value) > 0:
+                    if isinstance(value[0], CausalmHeadConfig):
+                        serializable_config_dict[key] = [head.to_diff_dict() for head in value]
+                        # for head_cfg in serializable_config_dict[key]:
+                        #     head_cfg.pop('transformers_version')
                 else:
                     serializable_config_dict[key] = value
 

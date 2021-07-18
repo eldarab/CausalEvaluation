@@ -12,7 +12,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput, TokenClassif
 from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertModel, BertLMPredictionHead
 
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
-from utils import SEQUENCE_CLASSIFICATION, TOKEN_CLASSIFICATION
+from utils import SEQUENCE_CLASSIFICATION, TOKEN_CLASSIFICATION, HEAD_TYPES
 
 
 @dataclass
@@ -57,9 +57,9 @@ class BertCausalmAdditionalPreTrainingHeads(nn.Module):
         head_types = []
 
         if mode == 'tc':
-            heads_cfg = config.tc_heads_cfg
+            heads_cfg = config.tc_heads_cfg if config.tc_heads_cfg else []
         elif mode == 'cc':
-            heads_cfg = config.cc_heads_cfg
+            heads_cfg = config.cc_heads_cfg if config.cc_heads_cfg else []
         else:
             raise RuntimeError(f'Illegal mode: "{mode}". Can be either "tc" or "cc".')
 
@@ -123,23 +123,28 @@ class BertForCausalmAdditionalPreTraining(BertPreTrainedModel):
 
         # TODO add token classification version
         for head in self.config.tc_heads_cfg + self.config.cc_heads_cfg:
-            if head.head_type != SEQUENCE_CLASSIFICATION:
+            if head.head_type not in HEAD_TYPES:
                 raise NotImplementedError()
 
         total_loss = None
-        if mlm_labels is not None and tc_labels is not None and cc_labels is not None:
+        if mlm_labels is not None or tc_labels is not None or cc_labels is not None:
             loss_fct = CrossEntropyLoss()
 
             # LM loss
-            total_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), mlm_labels.view(-1))
+            if mlm_labels is not None:
+                total_loss = loss_fct(mlm_head_scores.view(-1, self.config.vocab_size), mlm_labels.view(-1))
+            else:
+                raise NotImplementedError()
 
             # Treated concepts loss, note the minus
-            for tc_head_score, tc_head_cfg in zip(tc_heads_scores, self.config.tc_heads_cfg):
-                total_loss -= self.config.tc_lambda * loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
+            if tc_labels is not None:
+                for tc_head_score, tc_head_cfg in zip(tc_heads_scores, self.config.tc_heads_cfg):
+                    total_loss -= self.config.tc_lambda * loss_fct(tc_head_score.view(-1, tc_head_cfg.num_labels), tc_labels.view(-1))
 
             # Control concepts loss
-            for cc_head_score, cc_head_cfg in zip(cc_heads_scores, self.config.cc_heads_cfg):
-                total_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_labels.view(-1))
+            if cc_labels is not None:
+                for cc_head_score, cc_head_cfg in zip(cc_heads_scores, self.config.cc_heads_cfg):
+                    total_loss += loss_fct(cc_head_score.view(-1, cc_head_cfg.num_labels), cc_labels.view(-1))
 
         if not return_dict:
             output = (mlm_head_scores, tc_heads_scores, cc_heads_scores) + outputs[2:]
