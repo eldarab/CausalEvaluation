@@ -4,18 +4,18 @@ import warnings
 import numpy as np
 import pandas
 from datasets import load_metric, Features, Value, ClassLabel, load_dataset, Sequence, DatasetDict, Dataset
-from transformers import BertTokenizerFast, BertTokenizer, BertModel, TrainingArguments, Trainer, DataCollatorForTokenClassification
+from transformers import BertTokenizerFast, BertTokenizer, BertModel, TrainingArguments
 from transformers import logging
 
-from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForSequenceClassification, BertCausalmForTokenClassification
+from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForTokenClassification
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
 from modeling.BERT.trainer_causalm import CausalmTrainingArguments, CausalmTrainer
 from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, PROJECT_DIR, CausalmMetrics, TOKEN_CLASSIFICATION, \
     DataCollatorForCausalmAdditionalPretraining, DataCollatorForCausalmTokenClassification
 
 
-def tokenize_and_align_labels(examples, tokenizer=None, label_all_tokens=True, label_names=None):
-    tokenized_inputs = tokenizer(examples["tokens"], truncation=True, is_split_into_words=True)
+def tokenize_and_align_labels(examples, text_key='text', tokenizer=None, label_all_tokens=True, label_names=None):
+    tokenized_inputs = tokenizer(examples[text_key], truncation=True, is_split_into_words=True)
 
     for label_name in label_names:
         labels = []
@@ -40,6 +40,10 @@ def tokenize_and_align_labels(examples, tokenizer=None, label_all_tokens=True, l
             labels.append(label_ids)
 
         tokenized_inputs[label_name] = labels
+
+    if 'task_labels' in examples:
+        tokenized_inputs['task_labels'] = examples['task_labels']
+
     return tokenized_inputs
 
 
@@ -53,9 +57,11 @@ def additional_pretraining_pipeline(
     data_collator = DataCollatorForCausalmAdditionalPretraining(tokenizer=tokenizer, mlm_probability=0.15, collate_cc=True, collate_tc=True)
 
     # model
+    num_tc_labels = train_dataset.features['tc_labels'].feature.num_classes
+    num_cc_labels = train_dataset.features['cc_labels'].feature.num_classes
     config = BertCausalmConfig(
-        tc_heads_cfg=[CausalmHeadConfig(head_name='POS', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': 47})],
-        cc_heads_cfg=[CausalmHeadConfig(head_name='NER', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': 9})],
+        tc_heads_cfg=[CausalmHeadConfig(head_name='tc', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': num_tc_labels})],
+        cc_heads_cfg=[CausalmHeadConfig(head_name='cc', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': num_cc_labels})],
         tc_lambda=0.2,
     )
     model = BertForCausalmAdditionalPreTraining(config)
@@ -75,8 +81,10 @@ def additional_pretraining_pipeline(
         label_names=['cc_labels', 'tc_labels'],
         causalm_additional_pretraining=True,
         num_cc=1,
-        # num_tc=1
+        num_tc=1
     )
+
+    args._n_gpu = 1
 
     # noinspection PyTypeChecker
     trainer = CausalmTrainer(
@@ -97,7 +105,7 @@ def additional_pretraining_pipeline(
     return trainer
 
 
-def downstream_task_training_pipeline(
+def downstream_task_pipeline(
         train_dataset,
         test_dataset,
         bert_model,
@@ -178,41 +186,44 @@ def downstream_task_training_pipeline(
     return trainer
 
 
-def get_ps_ner_domain_data(tokenizer):
+def get_ps_ner_domain_data(tokenizer, cf=False):
     train_df = pandas.read_pickle(str(DATA_DIR / 'PND_train.pkl'))
     test_df = pandas.read_pickle(str(DATA_DIR / 'PND_test.pkl'))
 
     domain_names = ['Books', 'Clothing', 'Electronics', 'Movies', 'Tools']
     ps_tags_names = ['not_ps'] + domain_names
+    ner_names = ['NOT_ENTITY', 'CARDINAL', 'DATE', 'EVENT', 'FAC', 'GPE', 'LANGUAGE',
+                 'LAW', 'LOC', 'MONEY', 'NORP', 'ORDINAL', 'ORG', 'PERCENT',
+                 'PERSON', 'PRODUCT', 'QUANTITY', 'TIME', 'WORK_OF_ART']  # from https://spacy.io/models/en#en_core_web_trf-labels
     sentiment_names = ['negative', 'positive']
 
     features = Features({
         'review_text': Value(dtype='string', id='review_text'),
-        'domain': ClassLabel(num_classes=5, names=domain_names, id='domain'),
-        'ps': Sequence(Value(dtype='string')),
-        'sentiment': ClassLabel(num_classes=2, names=sentiment_names, id='sentiment'),
-        'tokens': Sequence(Value(dtype='string')),
-        'ps_tags': Sequence(ClassLabel(num_classes=6, names=ps_tags_names)),
-        'ner_tags': Sequence(ClassLabel(num_classes=9)),  # TODO num classes???
+        'domain': ClassLabel(num_classes=len(domain_names), names=domain_names, id='domain'),
+        'ps': Sequence(Value(dtype='string'), id='ps'),
+        'sentiment': ClassLabel(num_classes=len(sentiment_names), names=sentiment_names, id='sentiment'),
+        'tokens': Sequence(Value(dtype='string'), id='tokens'),
+        'ps_tags': Sequence(ClassLabel(num_classes=len(ps_tags_names), names=ps_tags_names), id='ps_tags'),
+        'ner_tags': Sequence(ClassLabel(num_classes=len(ner_names), names=ner_names), id='ner_tags'),
+        'ps_cf': Sequence(Value(dtype='string'), id='ps_cf'),
     })
 
     datasets = DatasetDict()
     datasets['train'] = Dataset.from_pandas(train_df, features=features)
     datasets['test'] = Dataset.from_pandas(test_df, features=features)
 
+    datasets = datasets.rename_column('ps_cf', 'tokens_cf')
     datasets = datasets.rename_column('ps_tags', 'tc_labels')
     datasets = datasets.rename_column('ner_tags', 'cc_labels')
     datasets = datasets.rename_column('sentiment', 'task_labels')
 
+    labels_names = ['cc_labels', 'tc_labels']
+
     datasets = datasets.remove_columns(['ps', 'review_text'])
 
-    def preprocess_function(examples):
-        if not any(examples['text']):  # don't preprocess "None"
-            return tokenizer(['' for _ in examples['text']], truncation=True, padding=True)
-        else:
-            return tokenizer(examples['text'], truncation=True, padding=True)
-
-    datasets = datasets.map(preprocess_function, batched=True)
+    key = 'tokens_cf' if cf else 'tokens'
+    datasets = datasets.map(tokenize_and_align_labels, batched=True,
+                            fn_kwargs={'tokenizer': tokenizer, 'label_names': labels_names, 'text_key': key})
 
     return datasets
 
@@ -244,20 +255,20 @@ def debug_main():
 
     # probe forget treated concept --------------------
     print('>>> Treated concept training bert_o')
-    bert_o_tc_classifier = downstream_task_training_pipeline(
+    bert_o_tc_classifier = downstream_task_pipeline(
         datasets['train'], datasets['test'], bert_o, epochs=3, token_classifier_type='tc', num_labels=len(tc_label_list)).model
 
     print('>>> Treated concept training bert_cf')
-    bert_cf_tc_classifier = downstream_task_training_pipeline(
+    bert_cf_tc_classifier = downstream_task_pipeline(
         datasets['train'], datasets['test'], bert_cf, epochs=3, token_classifier_type='tc', num_labels=len(tc_label_list)).model
 
     # probe remember control concept --------------------
     print('>>> Control concept training bert_o')
-    bert_o_cc_classifier = downstream_task_training_pipeline(
+    bert_o_cc_classifier = downstream_task_pipeline(
         datasets['train'], datasets['test'], bert_o, epochs=3, token_classifier_type='cc', num_labels=len(cc_label_list)).model
 
     print('>>> Control concept training bert_cf')
-    bert_cf_cc_classifier = downstream_task_training_pipeline(
+    bert_cf_cc_classifier = downstream_task_pipeline(
         datasets['train'], datasets['test'], bert_cf, epochs=3, token_classifier_type='cc', num_labels=len(cc_label_list)).model
 
     # # train for task --------------------
@@ -283,17 +294,75 @@ def debug_main():
 
 
 def main():
+    # initialize model
     time_str = time.strftime('%Y_%m_%d__%H_%M_%S')
     model_name = f'PND__{time_str}'
     save_dir = str(PROJECT_DIR / 'saved_models' / model_name)
     logging.set_verbosity(logging.ERROR)
     warnings.filterwarnings('ignore', message='Was asked to gather along dimension 0, ')
 
+    # create tokenizer
     tokenizer = BertTokenizerFast.from_pretrained(BERT_MODEL_CHECKPOINT)
 
-    datasets = get_ps_ner_domain_data(tokenizer)
+    # load data
+    dataset_f = get_ps_ner_domain_data(tokenizer, cf=False)
+    dataset_cf = get_ps_ner_domain_data(tokenizer, cf=True)
+    cc_label_list = dataset_f['train'].features['cc_labels'].feature.names
+    tc_label_list = dataset_f['train'].features['tc_labels'].feature.names
+    task_label_list = dataset_f['train'].features['task_labels'].feature.names
 
-    print()
+    # 1) Pretraining
+    bert_o = BertModel.from_pretrained(BERT_MODEL_CHECKPOINT)
+
+    # 2) Additional Pretraining
+    bert_cf = additional_pretraining_pipeline(tokenizer, dataset_f['train'], epochs=2).model.bert
+
+    # 3) Downstream Task Training
+    bert_o_task_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_o, 'task', num_labels=len(task_label_list), epochs=7).model
+    bert_cf_task_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_cf, 'task', num_labels=len(task_label_list), epochs=7).model
+
+    # 4) Probing
+    # Probing for Treated Concept
+    bert_o_tc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_o, 'tc', num_labels=len(tc_label_list), epochs=7).model
+    bert_cf_tc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_cf, 'tc', num_labels=len(tc_label_list), epochs=7).model
+
+    # Probing for Control Concept
+    bert_o_cc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_o, 'cc', num_labels=len(cc_label_list), epochs=7).model
+    bert_cf_cc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_cf, 'cc', num_labels=len(cc_label_list), epochs=7).model
+
+    # 5) ATEs Estimation
+    metrics_cls = CausalmMetrics(BERT_MODEL_CHECKPOINT)
+    treate = metrics_cls.treate(model_o=bert_o_task_classifier, model_cf=bert_cf_task_classifier, dataset=dataset_f['test'])
+    ate = metrics_cls.ate(model=bert_o_task_classifier, dataset_f=dataset_f['test'], dataset_cf=dataset_cf['test'])
+    conexp = metrics_cls.conexp(model=bert_o_task_classifier, dataset=dataset_f['test'])
+
+    # save results
+    results_df = pandas.DataFrame.from_records({
+        'Task': ['Sentiment'],
+        'Adversarial Task': ['Product Specific'],
+        'Control Task': ['NER'],
+        'Confounder': ['Domain'],
+
+        'BERT-O Treated Performance': [],
+        'BERT-CF Treated Performance': [],
+        'INLP Treated Performance': [None],
+
+        'BERT-O Control Performance': [],
+        'BERT-CF Control Performance': [],
+        'INLP Control Performance': [None],
+
+        'BERT-O Task Performance': [],
+        'BERT-CF Task Performance': [],
+        'INLP Task Performance': [None],
+
+        'Treated ATE': [ate],
+        'Treated TReATE': [treate],
+        'Treated INLP': [None],
+        'Treated CONEXP': [conexp],
+    })
+    print('\n' * 3)
+    print(results_df)
+    results_df.to_csv(str(PROJECT_DIR / 'results' / model_name))
 
 
 if __name__ == '__main__':
