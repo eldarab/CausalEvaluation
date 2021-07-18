@@ -18,9 +18,10 @@ def calc_accuracy_from_logits(outputs, true_labels, model):
 
 
 class CausalmMetrics:
-    def __init__(self, tokenizer_checkpoint, device=DEVICE):
+    def __init__(self, tokenizer_checkpoint, text_key='text', device=DEVICE):
         self.tokenizer = BertTokenizerFast.from_pretrained(tokenizer_checkpoint)
         self.device = device
+        self.text_key = text_key
         # todo dataloader instead of dataset iterator
 
     def __compute_class_expectation(self, model, dataset, cls=0):
@@ -28,7 +29,7 @@ class CausalmMetrics:
         with no_grad():
             expectation = 0.
             for example in dataset:
-                inputs = self.tokenizer(example['text'], padding=True, truncation=True, return_tensors='pt')
+                inputs = self.tokenizer(example[self.text_key], padding=True, truncation=True, return_tensors='pt')
                 inputs.to(self.device)
 
                 outputs = model(**inputs)
@@ -57,7 +58,7 @@ class CausalmMetrics:
         with no_grad():
             treate = 0.
             for example in dataset:
-                inputs = self.tokenizer(example['text'], padding=True, truncation=True, return_tensors='pt')
+                inputs = self.tokenizer(example[self.text_key], padding=True, truncation=True, return_tensors='pt')
                 inputs.to(self.device)
 
                 outputs_o = model_o(**inputs)
@@ -79,8 +80,8 @@ class CausalmMetrics:
         with no_grad():
             ate = 0.
             for example_f, example_cf in zip(dataset_f, dataset_cf):
-                inputs_f = self.tokenizer(example_f['text'], padding=True, truncation=True, return_tensors='pt')
-                inputs_cf = self.tokenizer(example_cf['text'], padding=True, truncation=True, return_tensors='pt')
+                inputs_f = self.tokenizer(example_f[self.text_key], padding=True, truncation=True, return_tensors='pt')
+                inputs_cf = self.tokenizer(example_cf[self.text_key], padding=True, truncation=True, return_tensors='pt')
 
                 inputs_f.to(self.device)
                 inputs_cf.to(self.device)

@@ -97,7 +97,7 @@ class DataCollatorForCausalmAdditionalPretraining:
         if not self.collate_tc and not self.collate_cc:
             return batch
 
-        batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
+        batch = {k: torch.tensor(v, dtype=torch.int64) if not isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         return batch
 

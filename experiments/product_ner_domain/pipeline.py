@@ -3,11 +3,12 @@ import warnings
 
 import numpy as np
 import pandas
-from datasets import load_metric, Features, Value, ClassLabel, load_dataset, Sequence, DatasetDict, Dataset
+from datasets import load_metric, Features, Value, ClassLabel, Sequence, DatasetDict, Dataset
 from transformers import BertTokenizerFast, BertTokenizer, BertModel, TrainingArguments
 from transformers import logging
 
-from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForTokenClassification
+
+from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForTokenClassification, BertCausalmForSequenceClassification
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
 from modeling.BERT.trainer_causalm import CausalmTrainingArguments, CausalmTrainer
 from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, PROJECT_DIR, CausalmMetrics, TOKEN_CLASSIFICATION, \
@@ -84,7 +85,8 @@ def additional_pretraining_pipeline(
         num_tc=1
     )
 
-    args._n_gpu = 1
+    # uncomment this to cancel parallel training
+    # args._n_gpu = 1
 
     # noinspection PyTypeChecker
     trainer = CausalmTrainer(
@@ -102,15 +104,53 @@ def additional_pretraining_pipeline(
         model.bert.save_pretrained(save_directory=save_dir)
         print(f'>>> Saved model.bert in {save_dir}')
 
-    return trainer
+    return trainer.model.bert
+
+
+def classification_pipeline(tokenizer, bert_model, dataset, classifier_type, classification_task_type, label_name, labels_list, epochs=7):
+    """
+    Downstream task training pipeline.
+
+    classification_task_type: {'text-classification', 'token-classification'}
+    classifier_type: {'tc', 'cc', 'task'}
+    """
+    # initialize model
+    if classification_task_type == 'text-classification':
+        config = BertCausalmConfig(num_labels=len(labels_list), sequence_classifier_type=classifier_type)
+        model = BertCausalmForSequenceClassification(config)
+    elif classification_task_type == 'token-classification':
+        config = BertCausalmConfig(num_labels=len(labels_list), token_classifier_type=classifier_type)
+        model = BertCausalmForTokenClassification(config)
+    else:
+        raise NotImplementedError()
+    model.bert = bert_model
+
+    # initialize metrics
+    metric = load_metric('accuracy')
+
+
+    # initialize training
+    # noinspection PyTypeChecker
+    args = TrainingArguments(
+        output_dir=f'PND_{label_name}',
+        evaluation_strategy='epoch',
+        learning_rate=2e-5,
+        per_device_train_batch_size=32,
+        per_device_eval_batch_size=32,
+        num_train_epochs=epochs,
+        weight_decay=0.01,
+        load_best_model_at_end=True,
+        save_strategy='no',
+        label_names=[label_name],
+    )
+
 
 
 def downstream_task_pipeline(
-        train_dataset,
-        test_dataset,
+        dataset,
         bert_model,
-        token_classifier_type,
-        num_labels,
+        classifier_type,
+        label_list,
         lr=2e-5,
         epochs=7,
         overfit=False,
@@ -118,36 +158,16 @@ def downstream_task_pipeline(
 ):
     tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_CHECKPOINT)
 
-    label_name = f'{token_classifier_type}_labels'
+    label_name = f'{classifier_type}_labels'
 
-    config = BertCausalmConfig(num_labels=num_labels, token_classifier_type=token_classifier_type)
-    model = BertCausalmForTokenClassification(config)
+    if classifier_type == 'tc' or classifier_type == 'cc':
+        config = BertCausalmConfig(num_labels=len(label_list), token_classifier_type=classifier_type)
+        model = BertCausalmForTokenClassification(config)
+    else:
+        config = BertCausalmConfig(num_labels=len(label_list), sequence_classifier_type=classifier_type)
+        model = BertCausalmForSequenceClassification(config)
 
     model.bert = bert_model
-
-    label_list = train_dataset.features[label_name].feature.names
-
-    def compute_metrics(p):
-        predictions, labels = p
-        predictions = np.argmax(predictions, axis=2)
-
-        # Remove ignored index (special tokens)
-        true_predictions = [
-            [label_list[pred] for (pred, lbl) in zip(prediction, label) if lbl != -100]
-            for prediction, label in zip(predictions, labels)
-        ]
-        true_labels = [
-            [label_list[lbl] for (pred, lbl) in zip(prediction, label) if lbl != -100]
-            for prediction, label in zip(predictions, labels)
-        ]
-
-        results = metric.compute(predictions=true_predictions, references=true_labels)
-        return {
-            "precision": results["overall_precision"],
-            "recall": results["overall_recall"],
-            "f1": results["overall_f1"],
-            "accuracy": results["overall_accuracy"],
-        }
 
     # noinspection PyTypeChecker
     args = TrainingArguments(
@@ -163,16 +183,53 @@ def downstream_task_pipeline(
         label_names=[label_name],
     )
 
-    labels_to_ignore = {'cc_labels'} if label_name == 'tc_labels' else {'tc_labels'} if label_name == 'cc_labels' else set()
-    data_collator = DataCollatorForCausalmTokenClassification(tokenizer, label_name=label_name, labels_to_ignore=labels_to_ignore)
+    labels_to_ignore = {'cc_labels', 'tc_labels', 'task_labels'}
+    labels_to_ignore.remove(f'{classifier_type}_labels')
+    dataset = dataset.remove_columns(list(labels_to_ignore))
 
-    metric = load_metric("seqeval")
+    if classifier_type == 'tc' or classifier_type == 'cc':
+        data_collator = DataCollatorForCausalmTokenClassification(tokenizer, label_name=label_name, labels_to_ignore=labels_to_ignore)
+        metric = load_metric('seqeval')
+
+        def compute_metrics(p):
+            predictions, labels = p
+            predictions = np.argmax(predictions, axis=2)
+
+            # Remove ignored index (special tokens)
+            true_predictions = [
+                [label_list[pred] for (pred, lbl) in zip(prediction, label) if lbl != -100]
+                for prediction, label in zip(predictions, labels)
+            ]
+            true_labels = [
+                [label_list[lbl] for (pred, lbl) in zip(prediction, label) if lbl != -100]
+                for prediction, label in zip(predictions, labels)
+            ]
+
+            results = metric.compute(predictions=true_predictions, references=true_labels)
+            return {
+                "precision": results["overall_precision"],
+                "recall": results["overall_recall"],
+                "f1": results["overall_f1"],
+                "accuracy": results["overall_accuracy"],
+            }
+    elif classifier_type == 'task':
+        data_collator = None
+        metric = load_metric('accuracy')
+
+        def compute_metrics(p):
+            preds, labels = p
+            preds = np.argmax(preds, axis=1)
+            return metric.compute(predictions=preds, references=labels)
+    else:
+        raise NotImplementedError()
+
+    args._n_gpu = 1
 
     trainer = CausalmTrainer(
         model,
         args,
-        train_dataset=train_dataset,
-        eval_dataset=train_dataset if overfit else test_dataset,
+        train_dataset=dataset['train'],
+        eval_dataset=dataset['train'] if overfit else dataset['test'],
         data_collator=data_collator,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
@@ -183,7 +240,9 @@ def downstream_task_pipeline(
     else:
         trainer.train()
 
-    return trainer
+    eval_results = trainer.evaluate()
+
+    return trainer.model, eval_results
 
 
 def get_ps_ner_domain_data(tokenizer, cf=False):
@@ -212,18 +271,19 @@ def get_ps_ner_domain_data(tokenizer, cf=False):
     datasets['train'] = Dataset.from_pandas(train_df, features=features)
     datasets['test'] = Dataset.from_pandas(test_df, features=features)
 
-    datasets = datasets.rename_column('ps_cf', 'tokens_cf')
+    datasets = datasets.remove_columns(['ps', 'review_text'])
+
+    if cf:
+        datasets = datasets.remove_columns(['tokens'])
+        datasets = datasets.rename_column('ps_cf', 'tokens')
     datasets = datasets.rename_column('ps_tags', 'tc_labels')
     datasets = datasets.rename_column('ner_tags', 'cc_labels')
     datasets = datasets.rename_column('sentiment', 'task_labels')
 
     labels_names = ['cc_labels', 'tc_labels']
 
-    datasets = datasets.remove_columns(['ps', 'review_text'])
-
-    key = 'tokens_cf' if cf else 'tokens'
     datasets = datasets.map(tokenize_and_align_labels, batched=True,
-                            fn_kwargs={'tokenizer': tokenizer, 'label_names': labels_names, 'text_key': key})
+                            fn_kwargs={'tokenizer': tokenizer, 'label_names': labels_names, 'text_key': 'tokens'})
 
     return datasets
 
@@ -244,29 +304,30 @@ def main():
     dataset_cf = get_ps_ner_domain_data(tokenizer, cf=True)
     cc_label_list = dataset_f['train'].features['cc_labels'].feature.names
     tc_label_list = dataset_f['train'].features['tc_labels'].feature.names
-    task_label_list = dataset_f['train'].features['task_labels'].feature.names
+    task_label_list = dataset_f['train'].features['task_labels'].names
 
     # 1) Pretraining
     bert_o = BertModel.from_pretrained(BERT_MODEL_CHECKPOINT)
 
     # 2) Additional Pretraining
-    bert_cf = additional_pretraining_pipeline(tokenizer, dataset_f['train'], epochs=2).model.bert
+    bert_cf = additional_pretraining_pipeline(tokenizer, dataset_f['train'], epochs=2)
 
     # 3) Downstream Task Training
-    bert_o_task_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_o, 'task', num_labels=len(task_label_list), epochs=7).model
-    bert_cf_task_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_cf, 'task', num_labels=len(task_label_list), epochs=7).model
+    bert_o_task_classifier, bert_o_task_classifier_metrics = downstream_task_pipeline(
+        dataset_f, bert_o, 'task', label_list=task_label_list, epochs=4)
+    bert_cf_task_classifier, bert_cf_task_classifier_metrics = downstream_task_pipeline(
+        dataset_f, bert_cf, 'task', label_list=task_label_list, epochs=4)
 
-    # 4) Probing
-    # Probing for Treated Concept
-    bert_o_tc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_o, 'tc', num_labels=len(tc_label_list), epochs=7).model
-    bert_cf_tc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_cf, 'tc', num_labels=len(tc_label_list), epochs=7).model
+    # 4a) Probing for Treated Concept
+    _, bert_o_tc_classifier_metrics = downstream_task_pipeline(dataset_f, bert_o, 'tc', label_list=tc_label_list, epochs=4)
+    _, bert_cf_tc_classifier_metrics = downstream_task_pipeline(dataset_f, bert_cf, 'tc', label_list=tc_label_list, epochs=4)
 
-    # Probing for Control Concept
-    bert_o_cc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_o, 'cc', num_labels=len(cc_label_list), epochs=7).model
-    bert_cf_cc_classifier = downstream_task_pipeline(dataset_f['train'], dataset_f['test'], bert_cf, 'cc', num_labels=len(cc_label_list), epochs=7).model
+    # 4b) Probing for Control Concept
+    _, bert_o_cc_classifier_metrics = downstream_task_pipeline(dataset_f, bert_o, 'cc', label_list=cc_label_list, epochs=4)
+    _, bert_cf_cc_classifier_metrics = downstream_task_pipeline(dataset_f, bert_cf, 'cc', label_list=cc_label_list, epochs=4)
 
     # 5) ATEs Estimation
-    metrics_cls = CausalmMetrics(BERT_MODEL_CHECKPOINT)
+    metrics_cls = CausalmMetrics(text_key='tokens', tokenizer_checkpoint=BERT_MODEL_CHECKPOINT)
     treate = metrics_cls.treate(model_o=bert_o_task_classifier, model_cf=bert_cf_task_classifier, dataset=dataset_f['test'])
     ate = metrics_cls.ate(model=bert_o_task_classifier, dataset_f=dataset_f['test'], dataset_cf=dataset_cf['test'])
     conexp = metrics_cls.conexp(model=bert_o_task_classifier, dataset=dataset_f['test'])
@@ -278,16 +339,16 @@ def main():
         'Control Task': ['NER'],
         'Confounder': ['Domain'],
 
-        'BERT-O Treated Performance': [],
-        'BERT-CF Treated Performance': [],
+        'BERT-O Treated Performance': [bert_o_tc_classifier_metrics['eval_accuracy']],
+        'BERT-CF Treated Performance': [bert_cf_tc_classifier_metrics['eval_accuracy']],
         'INLP Treated Performance': [None],
 
-        'BERT-O Control Performance': [],
-        'BERT-CF Control Performance': [],
+        'BERT-O Control Performance': [bert_o_cc_classifier_metrics['eval_accuracy']],
+        'BERT-CF Control Performance': [bert_cf_cc_classifier_metrics['eval_accuracy']],
         'INLP Control Performance': [None],
 
-        'BERT-O Task Performance': [],
-        'BERT-CF Task Performance': [],
+        'BERT-O Task Performance': [bert_o_task_classifier_metrics['eval_accuracy']],
+        'BERT-CF Task Performance': [bert_cf_task_classifier_metrics['eval_accuracy']],
         'INLP Task Performance': [None],
 
         'Treated ATE': [ate],
