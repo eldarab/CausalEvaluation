@@ -173,24 +173,24 @@ def main():
 
     # 2) Additional Pretraining
     logger.info('**** 2) Additional Pretraining ****')
-    bert_cf = additional_pretraining_pipeline(tokenizer, dataset_f['train'], epochs=DEBUG_EPOCHS)
+    bert_cf = additional_pretraining_pipeline(tokenizer, dataset_f['train'], epochs=2)
 
     # 3) Downstream Task Training
     logger.info('**** 3) Downstream Task Training ****')
     bert_o_task_classifier, bert_o_task_classifier_metrics = classification_pipeline(tokenizer, bert_o, dataset_f, SEQUENCE_CLASSIFICATION, 'task',
-                                                                                     task_label_list, epochs=DEBUG_EPOCHS)
+                                                                                     task_label_list, epochs=5)
     bert_cf_task_classifier, bert_cf_task_classifier_metrics = classification_pipeline(tokenizer, bert_cf, dataset_f, SEQUENCE_CLASSIFICATION, 'task',
-                                                                                       task_label_list, epochs=DEBUG_EPOCHS)
+                                                                                       task_label_list, epochs=5)
 
     # 4a) Probing for Treated Concept
     logger.info('**** 4a) Probing for Treated Concept ****')
-    _, bert_o_tc_classifier_metrics = classification_pipeline(tokenizer, bert_o, dataset_f, TOKEN_CLASSIFICATION, 'tc', tc_label_list, epochs=DEBUG_EPOCHS)
-    _, bert_cf_tc_classifier_metrics = classification_pipeline(tokenizer, bert_cf, dataset_f, TOKEN_CLASSIFICATION, 'tc', tc_label_list, epochs=DEBUG_EPOCHS)
+    _, bert_o_tc_classifier_metrics = classification_pipeline(tokenizer, bert_o, dataset_f, TOKEN_CLASSIFICATION, 'tc', tc_label_list, epochs=5)
+    _, bert_cf_tc_classifier_metrics = classification_pipeline(tokenizer, bert_cf, dataset_f, TOKEN_CLASSIFICATION, 'tc', tc_label_list, epochs=5)
 
     # 4b) Probing for Control Concept
     logger.info('**** 4b) Probing for Control Concept ****')
-    _, bert_o_cc_classifier_metrics = classification_pipeline(tokenizer, bert_o, dataset_f, TOKEN_CLASSIFICATION, 'cc', cc_label_list, epochs=DEBUG_EPOCHS)
-    _, bert_cf_cc_classifier_metrics = classification_pipeline(tokenizer, bert_cf, dataset_f, TOKEN_CLASSIFICATION, 'cc', cc_label_list, epochs=DEBUG_EPOCHS)
+    _, bert_o_cc_classifier_metrics = classification_pipeline(tokenizer, bert_o, dataset_f, TOKEN_CLASSIFICATION, 'cc', cc_label_list, epochs=5)
+    _, bert_cf_cc_classifier_metrics = classification_pipeline(tokenizer, bert_cf, dataset_f, TOKEN_CLASSIFICATION, 'cc', cc_label_list, epochs=5)
 
     # 5) ATEs Estimation
     logger.info('**** 5) ATEs Estimation ****')
@@ -224,8 +224,6 @@ def main():
         'Treated INLP': [None],
         'Treated CONEXP': [conexp],
     })
-    print('\n' * 3)
-    print(results_df)
     results_df.to_csv(str(PROJECT_DIR / 'results' / f'{model_name}.csv'))
 
 
