@@ -1,3 +1,4 @@
+from itertools import chain
 from typing import Dict, Union, Any
 
 import datasets
@@ -131,6 +132,7 @@ class CausalMetrics:
 class EvalMetrics:
     def __init__(self, labels_list):
         self.f1 = load_metric('f1')
+        self.seqeval = load_metric('seqeval')
         self.labels_list = labels_list
 
     def compute_token_classification_f1(self, p):
@@ -138,16 +140,17 @@ class EvalMetrics:
         predictions = np.argmax(predictions, axis=2)
 
         # Remove ignored index (special tokens)
-        predictions = [
-            [self.labels_list[pred] for (pred, lbl) in zip(prediction, label) if lbl != -100]
+        true_predictions = [
+            [self.labels_list[p] for (p, l) in zip(prediction, label) if l != -100]
             for prediction, label in zip(predictions, labels)
         ]
-        references = [
-            [self.labels_list[lbl] for (pred, lbl) in zip(prediction, label) if lbl != -100]
+        true_labels = [
+            [self.labels_list[l] for (p, l) in zip(prediction, label) if l != -100]
             for prediction, label in zip(predictions, labels)
         ]
 
-        return self.f1.compute(predictions=predictions, references=references)
+        results = self.seqeval.compute(predictions=true_predictions, references=true_labels)
+        return {"f1": results["overall_f1"]}
 
     def compute_sequence_classification_f1(self, p):
         preds, labels = p
