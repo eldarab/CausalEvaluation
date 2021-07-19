@@ -9,7 +9,7 @@ from transformers import logging
 from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForSequenceClassification
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
 from modeling.BERT.trainer_causalm import CausalmTrainingArguments, CausalmTrainer
-from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, PROJECT_DIR, CausalmMetrics, DataCollatorForCausalmAdditionalPretraining
+from utils import DATA_DIR, BERT_MODEL_CHECKPOINT, SEQUENCE_CLASSIFICATION, PROJECT_DIR, CausalMetrics, DataCollatorForCausalmAdditionalPretraining
 
 
 def additional_pretraining_pipeline(
@@ -181,7 +181,7 @@ def main():
 
     print('>>> Computing metrics')
     # metrics
-    metrics_cls = CausalmMetrics(BERT_MODEL_CHECKPOINT)
+    metrics_cls = CausalMetrics(BERT_MODEL_CHECKPOINT)
     conexp = metrics_cls.conexp(model=bert_o_classifier, dataset=dataset_f['test'])
     treate = metrics_cls.treate(model_o=bert_o_classifier, model_cf=bert_cf_classifier, dataset=dataset_f['test'])
     ate = metrics_cls.ate(model=bert_o_classifier, dataset_f=dataset_f['test'], dataset_cf=dataset_cf['test'])
