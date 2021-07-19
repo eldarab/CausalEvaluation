@@ -1,14 +1,16 @@
-import warnings
+from typing import Dict, Union, Any
 
+import datasets
 import numpy as np
+import torch
+from datasets import load_metric
 from sklearn.metrics import accuracy_score
 from torch import no_grad
 from torch import softmax, mean
 from torch import abs as pt_abs
 from torch import sum as pt_sum
-from transformers import BertTokenizerFast
-
-from utils import BERT_MODEL_CHECKPOINT, DEVICE
+from torch.utils.data import Dataset, SequentialSampler, DataLoader
+from transformers import is_datasets_available
 
 
 def calc_accuracy_from_logits(outputs, true_labels, model):
@@ -19,74 +21,135 @@ def calc_accuracy_from_logits(outputs, true_labels, model):
     return accuracy, predictions
 
 
-class CausalmMetrics:
-    def __init__(self):
-        # TODO dataloader instead of dataset iterator
-        pass
+class CausalMetrics:
+    def __init__(self, data_collator, batch_size=32, drop_last=True, device='cuda'):
+        self.data_collator = data_collator
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+        self.device = device
+
+    def _prepare_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
+        """
+        Prepare :obj:`inputs` before feeding them to the model, converting them to tensors if they are not already and
+        handling potential state.
+        """
+        for k, v in inputs.items():
+            if isinstance(v, torch.Tensor):
+                inputs[k] = v.to(self.device)
+
+        return inputs
 
     @staticmethod
-    def __compute_class_expectation(model, dataset, cls):
+    def _remove_unused_columns(dataset):
+        return dataset.remove_columns(list(set(dataset.column_names)
+                                           .difference({'input_ids', 'attention_mask', 'token_type_ids'})))
+
+    def _get_dataloader(self, dataset) -> DataLoader:
+        if is_datasets_available() and isinstance(dataset, datasets.Dataset):
+            dataset = self._remove_unused_columns(dataset)
+
+        if isinstance(dataset, torch.utils.data.dataset.IterableDataset):
+            return DataLoader(dataset, batch_size=self.batch_size, drop_last=self.drop_last, collate_fn=self.data_collator)
+
+        sampler = SequentialSampler(dataset)
+
+        return DataLoader(dataset, sampler=sampler, batch_size=self.batch_size, drop_last=self.drop_last, collate_fn=self.data_collator)
+
+    def compute_class_expectation(self, model, dataset, cls):
         model.eval()
+        dataloader = self._get_dataloader(dataset)
+
         with no_grad():
             expectation = 0.
-            for example in dataset:
-                outputs = model(input_ids=example['input_ids'], attention_mask=example['attention_mask'], token_type_ids=example['token_type_ids'])
+            for inputs in dataloader:
+                inputs = self._prepare_inputs(inputs)
+                outputs = model(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'], token_type_ids=inputs['token_type_ids'])
                 cls_probabilities = softmax(outputs.logits, dim=-1)
-                expectation += mean(cls_probabilities, dim=0)[cls].item()  # / len(dataloader)
-            return expectation / len(dataset)
+                expectation += mean(cls_probabilities, dim=0)[cls].item()
+            return expectation / len(dataloader)
 
-    @staticmethod
-    def conexp(model, dataset, tc_indicator_name, cls=0) -> float:
+    def conexp(self, model, dataset, tc_indicator_name, cls=0) -> float:
         # TODO generalize to non-binary concept indicator
         dataset_0 = dataset.filter(lambda example: example[tc_indicator_name] == 0)
         dataset_1 = dataset.filter(lambda example: example[tc_indicator_name] == 1)
 
-        e_0 = CausalmMetrics.__compute_class_expectation(model, dataset_0, cls)
-        e_1 = CausalmMetrics.__compute_class_expectation(model, dataset_1, cls)
+        e_0 = self.compute_class_expectation(model, dataset_0, cls)
+        e_1 = self.compute_class_expectation(model, dataset_1, cls)
         conexp = abs(e_1 - e_0)
 
         return conexp
 
-    @staticmethod
-    def treate(model_o, model_cf, dataset, cls=0) -> float:
+    def treate(self, model_o, model_cf, dataset, cls=0) -> float:
         model_o.eval()
         model_cf.eval()
+        dataloader = self._get_dataloader(dataset)
 
         with no_grad():
             treate = 0.
-            for example in dataset:
-                outputs_o = model_o(input_ids=example['input_ids'], attention_mask=example['attention_mask'],
-                                    token_type_ids=example['token_type_ids'])
-                outputs_cf = model_cf(input_ids=example['input_ids'], attention_mask=example['attention_mask'],
-                                      token_type_ids=example['token_type_ids'])
+            for inputs in dataloader:
+                inputs = self._prepare_inputs(inputs)
+
+                outputs_o = model_o(**inputs)
+                outputs_cf = model_cf(**inputs)
 
                 cls_probabilities_o = softmax(outputs_o.logits, dim=-1)
                 cls_probabilities_cf = softmax(outputs_cf.logits, dim=-1)
 
-                treate += pt_abs(cls_probabilities_o - cls_probabilities_cf)[:, cls].sum().item()
+                treate += pt_abs(cls_probabilities_o - cls_probabilities_cf)[:, cls].mean().item()
 
-            treate /= len(dataset)
+            treate /= len(dataloader)
 
         return treate
 
-    @staticmethod
-    def ate(model, dataset_f, dataset_cf, cls=0) -> float:
-        assert len(dataset_f) == len(dataset_cf)
+    def ate(self, model, dataset_f, dataset_cf, cls=0) -> float:
         model.eval()
+        dataloader_f = self._get_dataloader(dataset_f)
+        dataloader_cf = self._get_dataloader(dataset_cf)
+
+        assert len(dataset_f) == len(dataset_cf)
+        assert len(dataloader_f) == len(dataloader_cf)
 
         with no_grad():
             ate = 0.
-            for example_f, example_cf in zip(dataset_f, dataset_cf):
-                outputs_f = model(input_ids=example_f['input_ids'], attention_mask=example_f['attention_mask'],
-                                  token_type_ids=example_f['token_type_ids'])
-                outputs_cf = model(input_ids=example_cf['input_ids'], attention_mask=example_cf['attention_mask'],
-                                   token_type_ids=example_cf['token_type_ids'])
+            for inputs_f, inputs_cf in zip(dataloader_f, dataloader_cf):
+                inputs_f = self._prepare_inputs(inputs_f)
+                inputs_cf = self._prepare_inputs(inputs_cf)
+
+                outputs_f = model(**inputs_f)
+                outputs_cf = model(**inputs_cf)
 
                 cls_probabilities_f = softmax(outputs_f.logits, dim=-1)
                 cls_probabilities_cf = softmax(outputs_cf.logits, dim=-1)
 
-                ate += pt_abs(cls_probabilities_f - cls_probabilities_cf)[:, cls].sum().item()
+                ate += pt_abs(cls_probabilities_f - cls_probabilities_cf)[:, cls].mean().item()
 
-            ate /= len(dataset_f)
+            ate /= len(dataloader_f)
 
         return ate
+
+
+class EvalMetrics:
+    def __init__(self, labels_list):
+        self.f1 = load_metric('f1')
+        self.labels_list = labels_list
+
+    def compute_token_classification_f1(self, p):
+        predictions, labels = p
+        predictions = np.argmax(predictions, axis=2)
+
+        # Remove ignored index (special tokens)
+        predictions = [
+            [self.labels_list[pred] for (pred, lbl) in zip(prediction, label) if lbl != -100]
+            for prediction, label in zip(predictions, labels)
+        ]
+        references = [
+            [self.labels_list[lbl] for (pred, lbl) in zip(prediction, label) if lbl != -100]
+            for prediction, label in zip(predictions, labels)
+        ]
+
+        return self.f1.compute(predictions=predictions, references=references)
+
+    def compute_sequence_classification_f1(self, p):
+        preds, labels = p
+        preds = np.argmax(preds, axis=1)
+        return self.f1.compute(predictions=preds, references=labels)
