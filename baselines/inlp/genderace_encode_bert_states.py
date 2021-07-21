@@ -35,6 +35,7 @@ def tokenize(tokenizer, data, group):
     Iterate over the data and tokenize it. Sequences longer than 512 tokens are trimmed.
     :param tokenizer: tokenizer to use for tokenization
     :param data: data to tokenize
+    :param group:
     :return: a list of the entire tokenized data
     """
     tokenized_data = []
@@ -68,7 +69,6 @@ def encode_text(model, data):
     return np.array(all_data_avg), np.array(all_data_cls)
 
 
-@timer
 def main():
     parser = ArgumentParser()
     parser.add_argument("--treatment", type=str, default="gender", choices=("gender", "race"),
@@ -106,8 +106,8 @@ def main():
 
                 avg_data, cls_data = encode_text(model, tokens)
 
-                np.save(output_path / f"{treatment}{exp}_{split}_{group}_avg.npy", avg_data)
-                np.save(output_path / f"{treatment}{exp}_{split}_{group}_cls.npy", cls_data)
+                np.save(str(output_path / f"{treatment}{exp}_{split}_{group}_avg.npy"), avg_data)
+                np.save(str(output_path / f"{treatment}{exp}_{split}_{group}_cls.npy"), cls_data)
 
 
 if __name__ == '__main__':

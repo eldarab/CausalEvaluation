@@ -35,42 +35,6 @@ def load_data(data_path: Path, encodings_path: Path, label_column: str, treatmen
     return data
 
 
-# Train a POMS classifier
-def train_downstream_classifier(train_xy: Tuple[np.ndarray, np.ndarray],
-                                test_xy: Tuple[np.ndarray, np.ndarray],
-                                logger):
-    x_train, y_train = train_xy
-    x_test, y_test = test_xy
-    random.seed(0)
-    np.random.seed(0)
-
-    clf = LogisticRegression(warm_start=True, penalty='l2',
-                             solver="saga", multi_class='multinomial', fit_intercept=False,
-                             verbose=5, n_jobs=-1, random_state=1, max_iter=7)
-
-    # params = {'}
-    # clf = SGDClassifier(loss= 'hinge', max_iter = 4000, fit_intercept= True, class_weight= None, n_jobs= 100)
-
-    idx = np.random.rand(x_train.shape[0]) < 1.0
-    clf.fit(x_train[idx], y_train[idx])
-    logger.info(f"Classifier Train Accuracy: {clf.score(x_train, y_train)}")
-    test_predictions, test_prediction_probs = predict_trained_classifier(clf, x_test, y_test, logger)
-    return clf, test_predictions, test_prediction_probs
-
-
-def predict_trained_classifier(clf, x_test, y_test, logger, P=None):
-    if P is not None:
-        projected_x_test = (P.dot(x_test.T)).T
-        logger.info(f"Classifier Projected Test Accuracy: {clf.score(projected_x_test, y_test)}")
-        test_predictions = clf.predict(projected_x_test)
-        test_prediction_probs = clf.predict_proba(projected_x_test)
-    else:
-        logger.info(f"Classifier Test Accuracy: {clf.score(x_test, y_test)}")
-        test_predictions = clf.predict(x_test)
-        test_prediction_probs = clf.predict_proba(x_test)
-    return test_predictions, test_prediction_probs
-
-
 def get_projection_matrix(num_clfs, X_train, Z_train_treatment, X_dev, Z_dev_treatment, Y_train_task, Y_dev_task):
     is_autoregressive = True
     min_acc = 0.
@@ -102,6 +66,27 @@ def get_projection_matrix(num_clfs, X_train, Z_train_treatment, X_dev, Z_dev_tre
     return P, rowspace_projections, Ws
 
 
+# Train a POMS classifier
+def train_downstream_classifier(train_xy: Tuple[np.ndarray, np.ndarray], test_xy: Tuple[np.ndarray, np.ndarray], logger):
+    x_train, y_train = train_xy
+    x_test, y_test = test_xy
+    random.seed(0)
+    np.random.seed(0)
+
+    clf = LogisticRegression(warm_start=True, penalty='l2',
+                             solver="saga", multi_class='multinomial', fit_intercept=False,
+                             verbose=5, n_jobs=-1, random_state=1, max_iter=7)
+
+    # params = {'}
+    # clf = SGDClassifier(loss= 'hinge', max_iter = 4000, fit_intercept= True, class_weight= None, n_jobs= 100)
+
+    idx = np.random.rand(x_train.shape[0]) < 1.0
+    clf.fit(x_train[idx], y_train[idx])
+    logger.info(f"Classifier Train Accuracy: {clf.score(x_train, y_train)}")
+    test_predictions, test_prediction_probs = predict_trained_classifier(clf, x_test, y_test, logger)
+    return clf, test_predictions, test_prediction_probs
+
+
 def finetune_downstream_classifier(P, train_xy, test_xy, logger):
     x_train, y_train = train_xy
     x_test, y_test = test_xy
@@ -125,6 +110,19 @@ def finetune_downstream_classifier(P, train_xy, test_xy, logger):
     test_predictions = clf.predict(projected_x_test)
     test_prediction_probs = clf.predict_proba(projected_x_test)
     return clf, test_predictions, test_prediction_probs
+
+
+def predict_trained_classifier(clf, x_test, y_test, logger, P=None):
+    if P is not None:
+        projected_x_test = (P.dot(x_test.T)).T
+        logger.info(f"Classifier Projected Test Accuracy: {clf.score(projected_x_test, y_test)}")
+        test_predictions = clf.predict(projected_x_test)
+        test_prediction_probs = clf.predict_proba(projected_x_test)
+    else:
+        logger.info(f"Classifier Test Accuracy: {clf.score(x_test, y_test)}")
+        test_predictions = clf.predict(x_test)
+        test_prediction_probs = clf.predict_proba(x_test)
+    return test_predictions, test_prediction_probs
 
 
 def main():

@@ -61,14 +61,14 @@ def debias_by_specific_directions(directions: List[np.ndarray], input_dim: int):
     return P
 
 
-def get_debiasing_projection(classifier_class, cls_params: Dict, num_classifiers: int, input_dim: int,
+def get_debiasing_projection(classifier_class, classifier_params: Dict, num_classifiers: int, input_dim: int,
                              is_autoregressive: bool,
                              min_accuracy: float, X_train: np.ndarray, Y_train: np.ndarray, X_dev: np.ndarray,
                              Y_dev: np.ndarray, by_class=True, Y_train_main=None,
                              Y_dev_main=None, dropout_rate=0) -> np.ndarray:
     """
     :param classifier_class: the sklearn classifier class (SVM/Perceptron etc.)
-    :param cls_params: a dictionary, containing the params for the sklearn classifier
+    :param classifier_params: a dictionary, containing the params for the sklearn classifier
     :param num_classifiers: number of iterations (equivalent to number of dimensions to remove)
     :param input_dim: size of input vectors
     :param is_autoregressive: whether to train the ith classiifer on the data projected to the nullsapces of w1,...,wi-1
@@ -101,7 +101,7 @@ def get_debiasing_projection(classifier_class, cls_params: Dict, num_classifiers
     pbar = tqdm(range(num_classifiers))
     for i in pbar:
 
-        clf = classifier.SKlearnClassifier(classifier_class(**cls_params))
+        clf = classifier.SKlearnClassifier(classifier_class(**classifier_params))
         dropout_scale = 1. / (1 - dropout_rate + 1e-6)
         dropout_mask = (np.random.rand(*X_train.shape) < (1 - dropout_rate)).astype(float) * dropout_scale
 
