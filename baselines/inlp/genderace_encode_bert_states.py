@@ -4,8 +4,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-from Timer import timer
-from constants import POMS_GENDER_DATASETS_DIR, POMS_GENDER_DATA_DIR, POMS_RACE_DATASETS_DIR, POMS_RACE_DATA_DIR
 from tqdm import tqdm
 from transformers import BertModel, BertTokenizer
 
@@ -92,7 +90,7 @@ def main():
         data_path = Path(POMS_RACE_DATASETS_DIR)
         output_path = Path(POMS_RACE_DATA_DIR)
 
-    output_path = output_path / "inlp" / "bert_encodings"
+    output_path = output_path / "baselines" / "bert_encodings"
     output_path.mkdir(parents=True, exist_ok=True)
 
     model, tokenizer = load_lm()
