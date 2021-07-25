@@ -2,21 +2,20 @@ import json
 
 import pandas
 from datasets import Features, Value, Sequence, ClassLabel, DatasetDict, Dataset
-from transformers import BertTokenizer, DataCollatorWithPadding
+from sklearn.model_selection import train_test_split
 
-from utils import BERT_MODEL_CHECKPOINT, CausalMetrics, DATA_DIR, tokenize_and_align_labels
-
-if __name__ == '__main__':
-    # estimate ATE of acceptability on model classifying sentiment
-    tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_CHECKPOINT)
-    data_collator = DataCollatorWithPadding(tokenizer)  # for sentiment classification
-    metrics_cls = CausalMetrics(data_collator)
+from experiments.pipelines import ate_estimation_pipeline
+from utils import DATA_DIR, tokenize_and_align_labels
 
 
-def get_acceptability_pos_domain_data(tokenizer):
+def get_acceptability_pos_domain_aggressive_data(tokenizer, aggressive=True):
     # load raw data to memory
-    train_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_aggressive_train.pkl'))
-    test_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_aggressive_test.pkl'))
+    if aggressive:
+        train_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_aggressive_train.pkl'))
+        test_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_aggressive_test.pkl'))
+    else:
+        df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'acceptability_pos_domain.pkl'))
+        train_df, test_df = train_test_split(df, test_size=0.25)
 
     # merge factual text into counterfactual text for examples w/o textual counterfactual
     def merge_f_cf(row, col_name):
@@ -67,3 +66,11 @@ def get_acceptability_pos_domain_data(tokenizer):
     datasets_cf = datasets_cf.rename_column('pos_tags_cf_merged', 'cc_labels')
 
     return datasets_f, datasets_cf
+
+
+def main():
+    ate_estimation_pipeline(get_acceptability_pos_domain_aggressive_data)
+
+
+if __name__ == '__main__':
+    main()

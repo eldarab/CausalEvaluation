@@ -1,10 +1,12 @@
-from transformers import TrainingArguments
+import warnings
+
+from transformers import TrainingArguments, BertTokenizerFast, BertModel, DataCollatorWithPadding
 
 from modeling.BERT.bert_causalm import BertForCausalmAdditionalPreTraining, BertCausalmForSequenceClassification, BertCausalmForTokenClassification
 from modeling.BERT.configuration_causalm import BertCausalmConfig, CausalmHeadConfig
 from modeling.BERT.trainer_causalm import CausalmTrainingArguments, CausalmTrainer
 from utils import DataCollatorForCausalmAdditionalPretraining, TOKEN_CLASSIFICATION, SEQUENCE_CLASSIFICATION, EvalMetrics, \
-    DataCollatorForCausalmTokenClassification
+    DataCollatorForCausalmTokenClassification, BERT_MODEL_CHECKPOINT, CausalMetrics
 
 
 def additional_pretraining_pipeline(tokenizer, train_dataset, eval_dataset=None, epochs=5, save_dir=None):
@@ -134,3 +136,36 @@ def classification_pipeline(tokenizer, bert_model, dataset, task_type, classifie
     eval_results = trainer.evaluate()
 
     return trainer.model, eval_results
+
+
+def ate_estimation_pipeline(get_data_fn):
+    """
+    Estimates ATE of the treated concept on the test set.
+
+    :param:
+    get_data_fn - function that returns dataset_f, dataset_cf with 'train' and 'test' folds.
+    """
+    warnings.filterwarnings('ignore', message='Was asked to gather along dimension 0, ')
+
+    # create tokenizer
+    tokenizer = BertTokenizerFast.from_pretrained(BERT_MODEL_CHECKPOINT)
+
+    # load data
+    dataset_f, dataset_cf = get_data_fn(tokenizer)
+    task_label_list = dataset_f['train'].features['task_labels'].names
+
+    bert_o = BertModel.from_pretrained(BERT_MODEL_CHECKPOINT)
+    bert_o_task_classifier, bert_o_task_classifier_metrics = classification_pipeline(
+        tokenizer,
+        bert_o,
+        dataset_f,
+        SEQUENCE_CLASSIFICATION,
+        'task',
+        task_label_list,
+        epochs=5
+    )
+    data_collator = DataCollatorWithPadding(tokenizer)
+    metrics_cls = CausalMetrics(data_collator)
+    ate = metrics_cls.ate(model=bert_o_task_classifier, dataset_f=dataset_f['test'], dataset_cf=dataset_cf['test'])
+
+    return ate
