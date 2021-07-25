@@ -138,7 +138,7 @@ def classification_pipeline(tokenizer, bert_model, dataset, task_type, classifie
     return trainer.model, eval_results
 
 
-def ate_estimation_pipeline(get_data_fn):
+def ate_estimation_pipeline(get_data_fn, **fn_kwargs):
     """
     Estimates ATE of the treated concept on the test set.
 
@@ -151,7 +151,7 @@ def ate_estimation_pipeline(get_data_fn):
     tokenizer = BertTokenizerFast.from_pretrained(BERT_MODEL_CHECKPOINT)
 
     # load data
-    dataset_f, dataset_cf = get_data_fn(tokenizer)
+    dataset_f, dataset_cf = get_data_fn(tokenizer, **fn_kwargs)
     task_label_list = dataset_f['train'].features['task_labels'].names
 
     bert_o = BertModel.from_pretrained(BERT_MODEL_CHECKPOINT)
