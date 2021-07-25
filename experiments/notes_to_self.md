@@ -62,5 +62,8 @@
 
 ## random
 
-* What does that mean to compute ate on CC?
+* What does that mean to compute ate on TC/CC?
 * Multiple control concepts?
+* How to compute CONEXP on a continuous concept?
+* Is Masked Product?
+* Domain-Related Entity
