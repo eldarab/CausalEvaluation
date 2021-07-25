@@ -155,7 +155,7 @@ class CausalmTrainer(Trainer):
     def train_causalm_additional_pretraining(self, tc, cc):
         """
         TODO: Implement train_causalm_additional_pretraining
-        Ultimately, this function will replace 'additional_pretraining_pipeline()' from pipeline.py.
+        Ultimately, this function will replace 'additional_pretraining_pipeline()' from product_ner_domain.py.
         """
         raise NotImplementedError()
 
