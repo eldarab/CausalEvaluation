@@ -3,41 +3,45 @@ import warnings
 
 import pandas
 from datasets import Features, Value, ClassLabel, Sequence, DatasetDict, Dataset
+from sklearn.model_selection import train_test_split
 from transformers import BertTokenizerFast, BertModel, DataCollatorWithPadding
 from transformers import logging
 
-from experiments.pipelines import additional_pretraining_pipeline, classification_pipeline
+from experiments.pipelines import additional_pretraining_pipeline, classification_pipeline, ate_estimation_pipeline
 from utils import BERT_MODEL_CHECKPOINT, PROJECT_DIR, CausalMetrics, TOKEN_CLASSIFICATION, \
-    SEQUENCE_CLASSIFICATION, DATA_DIR, tokenize_and_align_labels
+    SEQUENCE_CLASSIFICATION, DATA_DIR, tokenize_and_align_labels, get_label_names
 
 logger = logging.get_logger(__name__)
 
 
-def get_ps_ner_domain_data(tokenizer):
+def get_ps_ner_domain_data(tokenizer, version='balanced'):
     # load raw data
-    train_df = pandas.read_pickle(str(DATA_DIR / 'PND_train.pkl'))
-    test_df = pandas.read_pickle(str(DATA_DIR / 'PND_test.pkl'))
+    if version == 'original':
+        train_df = pandas.read_pickle(str(DATA_DIR / 'PND_train.pkl'))
+        test_df = pandas.read_pickle(str(DATA_DIR / 'PND_test.pkl'))
+    else:
+        df = pandas.read_json(str(DATA_DIR / 'product_ner_domain' / f'product_ner_domain_{version}.json'))
+        df = df.drop(columns=['ps_tags_noman_cf', 'ner_tags_spacy_cf'])
+        df.index = df.index.rename('id')
+        train_df, test_df = train_test_split(df, test_size=0.25)
 
-    # get label names
-    domain_names = ['Books', 'Clothing', 'Electronics', 'Movies', 'Tools']
-    ps_tags_names = ['not_ps'] + domain_names
-    ner_names = ['NOT_ENTITY', 'CARDINAL', 'DATE', 'EVENT', 'FAC', 'GPE', 'LANGUAGE',
-                 'LAW', 'LOC', 'MONEY', 'NORP', 'ORDINAL', 'ORG', 'PERCENT',
-                 'PERSON', 'PRODUCT', 'QUANTITY', 'TIME', 'WORK_OF_ART']  # from https://spacy.io/models/en#en_core_web_trf-labels
-    sentiment_names = ['negative', 'positive']
+    label_names = get_label_names()
+
+    datasets = DatasetDict()
+    datasets['train'] = Dataset.from_pandas(train_df)
+    datasets['test'] = Dataset.from_pandas(test_df)
 
     # construct features
     features = Features({
-        'review_text': Value(dtype='string', id='review_text'),
-        'domain': ClassLabel(num_classes=len(domain_names), names=domain_names, id='domain'),
-        'ps': Sequence(Value(dtype='string'), id='ps'),
-        'sentiment': ClassLabel(num_classes=len(sentiment_names), names=sentiment_names, id='sentiment'),
+        'id': Value(dtype='string', id='id'),
         'tokens': Sequence(Value(dtype='string'), id='tokens'),
-        'ps_tags': Sequence(ClassLabel(num_classes=len(ps_tags_names), names=ps_tags_names), id='ps_tags'),
-        'ner_tags': Sequence(ClassLabel(num_classes=len(ner_names), names=ner_names), id='ner_tags'),
         'tokens_cf': Sequence(Value(dtype='string'), id='tokens_cf'),
-        'is_ps': Value(dtype='int8', id='is_ps'),
-        'num_masks': Value(dtype='int16', id='num_masks')
+        'ps_tags_noman': Sequence(ClassLabel(num_classes=len(label_names['ps_tags_names']), names=label_names['ps_tags_names']), id='ps_tags_noman'),
+        # 'ps_tags_noman_cf': Sequence(ClassLabel(num_classes=len(label_names['ps_tags_names']), names=label_names['ps_tags_names']), id='ps_tags_noman_cf'),
+        'ner_tags_spacy': Sequence(ClassLabel(num_classes=len(label_names['idx2ne']), names=label_names['idx2ne']), id='ner_tags_spacy'),
+        # 'ner_tags_spacy_cf': Sequence(ClassLabel(num_classes=len(label_names['idx2ne']), names=label_names['idx2ne']), id='ner_tags_spacy_cf'),
+        'sentiment': ClassLabel(num_classes=len(label_names['sentiment_names']), names=label_names['sentiment_names'], id='sentiment'),
+        'domain': ClassLabel(num_classes=len(label_names['idx2domain']), names=label_names['idx2domain'], id='domain'),
     })
 
     # create HuggingFace DatasetDict
@@ -45,17 +49,13 @@ def get_ps_ner_domain_data(tokenizer):
     datasets['train'] = Dataset.from_pandas(train_df, features=features)
     datasets['test'] = Dataset.from_pandas(test_df, features=features)
 
-    # remove redundant columns
-    datasets = datasets.remove_columns(['ps', 'review_text', 'num_masks'])
-
     # rename columns to generic names
-    datasets = datasets.rename_column('ps_tags', 'tc_labels')
-    datasets = datasets.rename_column('ner_tags', 'cc_labels')
+    datasets = datasets.rename_column('ps_tags_noman', 'tc_labels')
+    datasets = datasets.rename_column('ner_tags_spacy', 'cc_labels')
     datasets = datasets.rename_column('sentiment', 'task_labels')
 
     # tokenize and align labels
     labels_names = ['cc_labels', 'tc_labels']
-
     datasets_f = datasets.map(tokenize_and_align_labels, batched=True,
                               fn_kwargs={'tokenizer': tokenizer, 'label_names': labels_names, 'tokens_key': 'tokens'})
     datasets_f = datasets_f.remove_columns(['tokens_cf'])
@@ -149,5 +149,14 @@ def main():
     results_df.to_csv(str(PROJECT_DIR / 'results' / f'{model_name}.csv'))
 
 
+def estimate_ate():
+    ate_balanced = ate_estimation_pipeline(get_ps_ner_domain_data, version='balanced')
+    ate_aggressive = ate_estimation_pipeline(get_ps_ner_domain_data, version='aggressive')
+    ate_moogzam = ate_estimation_pipeline(get_ps_ner_domain_data, version='moogzam')
+    print(f'Balanced:   {ate_balanced:.3f}')
+    print(f'Aggressive: {ate_aggressive:.3f}')
+    print(f'Moogzam:    {ate_moogzam:.3f}')
+
+
 if __name__ == '__main__':
-    main()
+    estimate_ate()

@@ -8,19 +8,19 @@ from experiments.pipelines import ate_estimation_pipeline
 from utils import DATA_DIR, tokenize_and_align_labels
 
 
-def get_acceptability_pos_domain_data(tokenizer, correlation='balanced'):
+def get_acceptability_pos_domain_data(tokenizer, version='balanced'):
     # load raw data to memory
-    if correlation == 'balanced':
+    if version == 'balanced':
         df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'acceptability_pos_domain.pkl'))
         train_df, test_df = train_test_split(df, test_size=0.25)
-    elif correlation == 'aggressive':
+    elif version == 'aggressive':
         train_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_aggressive_train.pkl'))
         test_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_aggressive_test.pkl'))
-    elif correlation == 'moogzam':
+    elif version == 'moogzam':
         train_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_moogzam_train.pkl'))
         test_df = pandas.read_pickle(str(DATA_DIR / 'acceptability_pos_domain' / 'APD_moogzam_test.pkl'))
     else:
-        raise RuntimeError(f'Illegal correlation "{correlation}"')
+        raise RuntimeError(f'Illegal correlation "{version}"')
 
     test_df = test_df[test_df['tokens_cf'].notna()]
 
@@ -75,14 +75,18 @@ def get_acceptability_pos_domain_data(tokenizer, correlation='balanced'):
     return datasets_f, datasets_cf
 
 
-def main():
-    ate_balanced = ate_estimation_pipeline(get_acceptability_pos_domain_data, correlation='balanced')
-    ate_aggressive = ate_estimation_pipeline(get_acceptability_pos_domain_data, correlation='aggressive')
-    ate_moogzam = ate_estimation_pipeline(get_acceptability_pos_domain_data, correlation='moogzam')
+def estimate_ate():
+    ate_balanced = ate_estimation_pipeline(get_acceptability_pos_domain_data, version='balanced')
+    ate_aggressive = ate_estimation_pipeline(get_acceptability_pos_domain_data, version='aggressive')
+    ate_moogzam = ate_estimation_pipeline(get_acceptability_pos_domain_data, version='moogzam')
     print(f'Balanced:   {ate_balanced:.3f}')
     print(f'Aggressive: {ate_aggressive:.3f}')
     print(f'Moogzam:    {ate_moogzam:.3f}')
 
 
+def main():
+    pass
+
+
 if __name__ == '__main__':
-    main()
+    estimate_ate()
