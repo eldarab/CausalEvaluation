@@ -1,3 +1,4 @@
+import json
 import re
 
 import numpy as np
@@ -6,6 +7,7 @@ import spacy
 from pandas import DataFrame
 from sklearn.model_selection import train_test_split
 
+from .causal_evaluation_paths import DATA_DIR
 from .constants import RANDOM_SEED
 # from spacy.lang.tag_map import TAG_MAP
 from .main_utils import init_logger
@@ -221,3 +223,8 @@ def tokenize_and_align_labels(examples, tokens_key='text', tokenizer=None, label
         tokenized_inputs[label_name] = labels
 
     return tokenized_inputs
+
+
+def get_label_names():
+    with open(str(DATA_DIR / 'label_names.json')) as f:
+        return json.load(f)
