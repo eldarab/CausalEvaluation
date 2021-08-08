@@ -196,6 +196,7 @@ def validate_dataset(df, stats_columns, bias_column, label_column, logger=None):
 
 
 def tokenize_and_align_labels(examples, tokens_key='text', tokenizer=None, label_all_tokens=True, label_names=None):
+    # TODO make sure [MASK] tokens get -100 in the tc/cc labels.
     tokenized_inputs = tokenizer(examples[tokens_key], truncation=True, is_split_into_words=True)
 
     for label_name in label_names:

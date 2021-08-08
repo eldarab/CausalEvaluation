@@ -9,15 +9,25 @@ from utils import DataCollatorForCausalmAdditionalPretraining, TOKEN_CLASSIFICAT
     DataCollatorForCausalmTokenClassification, BERT_MODEL_CHECKPOINT, CausalMetrics
 
 
-def additional_pretraining_pipeline(tokenizer, train_dataset, eval_dataset=None, epochs=5, save_dir=None):
-    data_collator = DataCollatorForCausalmAdditionalPretraining(tokenizer=tokenizer, mlm_probability=0.15, collate_cc=True, collate_tc=True)
+def additional_pretraining_pipeline(tokenizer, train_dataset, tc_head_type, cc_head_type, eval_dataset=None, epochs=5, save_dir=None, parallel=True):
+    collate_tc = tc_head_type == TOKEN_CLASSIFICATION
+    collate_cc = cc_head_type == TOKEN_CLASSIFICATION
+    data_collator = DataCollatorForCausalmAdditionalPretraining(tokenizer=tokenizer, mlm_probability=0.15,
+                                                                collate_tc=collate_tc, collate_cc=collate_cc)
 
     # model
-    num_tc_labels = train_dataset.features['tc_labels'].feature.num_classes
-    num_cc_labels = train_dataset.features['cc_labels'].feature.num_classes
+    if hasattr(train_dataset.features['tc_labels'], 'feature'):
+        num_tc_labels = train_dataset.features['tc_labels'].feature.num_classes
+    else:
+        num_tc_labels = train_dataset.features['tc_labels'].num_classes
+    if hasattr(train_dataset.features['cc_labels'], 'feature'):
+        num_cc_labels = train_dataset.features['cc_labels'].feature.num_classes
+    else:
+        num_cc_labels = train_dataset.features['cc_labels'].num_classes
+
     config = BertCausalmConfig(
-        tc_heads_cfg=[CausalmHeadConfig(head_name='tc', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': num_tc_labels})],
-        cc_heads_cfg=[CausalmHeadConfig(head_name='cc', head_type=TOKEN_CLASSIFICATION, head_params={'num_labels': num_cc_labels})],
+        tc_heads_cfg=[CausalmHeadConfig(head_name='tc', head_type=tc_head_type, head_params={'num_labels': num_tc_labels})],
+        cc_heads_cfg=[CausalmHeadConfig(head_name='cc', head_type=cc_head_type, head_params={'num_labels': num_cc_labels})],
         tc_lambda=0.2,
     )
     model = BertForCausalmAdditionalPreTraining(config)
@@ -40,8 +50,8 @@ def additional_pretraining_pipeline(tokenizer, train_dataset, eval_dataset=None,
         num_tc=1
     )
 
-    # uncomment this to cancel parallel training
-    args._n_gpu = 1
+    if not parallel:
+        args._n_gpu = 1
 
     # noinspection PyTypeChecker
     trainer = CausalmTrainer(
@@ -154,6 +164,7 @@ def ate_estimation_pipeline(get_data_fn, **fn_kwargs):
     dataset_f, dataset_cf = get_data_fn(tokenizer, **fn_kwargs)
     task_label_list = dataset_f['train'].features['task_labels'].names
 
+    # train a null model for downstream task
     bert_o = BertModel.from_pretrained(BERT_MODEL_CHECKPOINT)
     bert_o_task_classifier, bert_o_task_classifier_metrics = classification_pipeline(
         tokenizer,
@@ -164,6 +175,8 @@ def ate_estimation_pipeline(get_data_fn, **fn_kwargs):
         task_label_list,
         epochs=5
     )
+
+    # estimate ate
     data_collator = DataCollatorWithPadding(tokenizer)
     metrics_cls = CausalMetrics(data_collator)
     ate = metrics_cls.ate(model=bert_o_task_classifier, dataset_f=dataset_f['test'], dataset_cf=dataset_cf['test'])

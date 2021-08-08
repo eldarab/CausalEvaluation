@@ -1,5 +1,6 @@
 import time
 import warnings
+from argparse import Namespace
 
 import pandas
 from datasets import Features, Value, ClassLabel, Sequence, DatasetDict, Dataset
@@ -20,16 +21,12 @@ def get_ps_ner_domain_data(tokenizer, version='balanced'):
         train_df = pandas.read_pickle(str(DATA_DIR / 'PND_train.pkl'))
         test_df = pandas.read_pickle(str(DATA_DIR / 'PND_test.pkl'))
     else:
-        df = pandas.read_json(str(DATA_DIR / 'product_ner_domain' / f'product_ner_domain_{version}.json'))
-        df = df.drop(columns=['ps_tags_noman_cf', 'ner_tags_spacy_cf'])
-        df.index = df.index.rename('id')
-        train_df, test_df = train_test_split(df, test_size=0.25)
+        train_df = pandas.read_json(str(DATA_DIR / 'product_ner_domain' / f'product_ner_domain_{version}_train.json'))
+        test_df = pandas.read_json(str(DATA_DIR / 'product_ner_domain' / f'product_ner_domain_{version}_test.json'))
+        train_df.index = train_df.index.rename('id')
+        test_df.index = test_df.index.rename('id')
 
     label_names = get_label_names()
-
-    datasets = DatasetDict()
-    datasets['train'] = Dataset.from_pandas(train_df)
-    datasets['test'] = Dataset.from_pandas(test_df)
 
     # construct features
     features = Features({
@@ -37,11 +34,11 @@ def get_ps_ner_domain_data(tokenizer, version='balanced'):
         'tokens': Sequence(Value(dtype='string'), id='tokens'),
         'tokens_cf': Sequence(Value(dtype='string'), id='tokens_cf'),
         'ps_tags_noman': Sequence(ClassLabel(num_classes=len(label_names['ps_tags_names']), names=label_names['ps_tags_names']), id='ps_tags_noman'),
-        # 'ps_tags_noman_cf': Sequence(ClassLabel(num_classes=len(label_names['ps_tags_names']), names=label_names['ps_tags_names']), id='ps_tags_noman_cf'),
+        'is_ps': ClassLabel(num_classes=2, names=['not_ps', 'ps'], id='is_ps'),
         'ner_tags_spacy': Sequence(ClassLabel(num_classes=len(label_names['idx2ne']), names=label_names['idx2ne']), id='ner_tags_spacy'),
-        # 'ner_tags_spacy_cf': Sequence(ClassLabel(num_classes=len(label_names['idx2ne']), names=label_names['idx2ne']), id='ner_tags_spacy_cf'),
         'sentiment': ClassLabel(num_classes=len(label_names['sentiment_names']), names=label_names['sentiment_names'], id='sentiment'),
         'domain': ClassLabel(num_classes=len(label_names['idx2domain']), names=label_names['idx2domain'], id='domain'),
+        'review_text': Value(dtype='string', id='review_text')
     })
 
     # create HuggingFace DatasetDict
@@ -68,7 +65,7 @@ def get_ps_ner_domain_data(tokenizer, version='balanced'):
     return datasets_f, datasets_cf
 
 
-def main():
+def causalm_pipeline(args):
     # initialize model
     time_str = time.strftime('%Y_%m_%d__%H_%M_%S')
     model_name = f'PND__{time_str}'
@@ -81,7 +78,7 @@ def main():
     tokenizer = BertTokenizerFast.from_pretrained(BERT_MODEL_CHECKPOINT)
 
     # load data
-    dataset_f, dataset_cf = get_ps_ner_domain_data(tokenizer)
+    dataset_f, dataset_cf = get_ps_ner_domain_data(tokenizer, args.version)
     cc_label_list = dataset_f['train'].features['cc_labels'].feature.names
     tc_label_list = dataset_f['train'].features['tc_labels'].feature.names
     task_label_list = dataset_f['train'].features['task_labels'].names
@@ -95,14 +92,15 @@ def main():
 
     # 2) Additional Pretraining
     logger.info('**** 2) Additional Pretraining ****')
-    bert_cf = additional_pretraining_pipeline(tokenizer, dataset_f['train'], epochs=2)
+    # bert_cf = additional_pretraining_pipeline(tokenizer, dataset_f['train'], tc_head_type=TOKEN_CLASSIFICATION,
+    #                                           cc_head_type=TOKEN_CLASSIFICATION, epochs=2)
 
     # 3) Downstream Task Training
     logger.info('**** 3) Downstream Task Training ****')
-    bert_o_task_classifier, bert_o_task_classifier_metrics = classification_pipeline(tokenizer, bert_o, dataset_f, SEQUENCE_CLASSIFICATION, 'task',
-                                                                                     task_label_list, epochs=5)
-    bert_cf_task_classifier, bert_cf_task_classifier_metrics = classification_pipeline(tokenizer, bert_cf, dataset_f, SEQUENCE_CLASSIFICATION, 'task',
-                                                                                       task_label_list, epochs=5)
+    # bert_o_task_classifier, bert_o_task_classifier_metrics = classification_pipeline(tokenizer, bert_o, dataset_f, SEQUENCE_CLASSIFICATION, 'task',
+    #                                                                                  task_label_list, epochs=5)
+    # bert_cf_task_classifier, bert_cf_task_classifier_metrics = classification_pipeline(tokenizer, bert_cf, dataset_f, SEQUENCE_CLASSIFICATION, 'task',
+    #                                                                                    task_label_list, epochs=5)
 
     # 4a) Probing for Treated Concept
     logger.info('**** 4a) Probing for Treated Concept ****')
@@ -159,4 +157,7 @@ def estimate_ate():
 
 
 if __name__ == '__main__':
-    estimate_ate()
+    # estimate_ate()
+    causalm_pipeline(Namespace(version='balanced'))
+    # causalm_pipeline(Namespace(version='aggressive'))
+    # causalm_pipeline(Namespace(version='moogzam'))

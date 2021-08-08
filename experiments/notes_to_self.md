@@ -67,6 +67,8 @@
 * How to compute CONEXP on a continuous concept?
 * Is Masked Product?
 * Domain-Related Entity
+* the Predicted sentiment vs. the Generating sentiment
+
 
 
 ## Why estimation using INLP may fail
@@ -78,3 +80,4 @@
 5. Estimates 0 when no ATE_gt is 0.
 6. Can't count on INLP code.
 7. Can't count on old Causalm code.
+8. can only guard "sequence level" attributes.

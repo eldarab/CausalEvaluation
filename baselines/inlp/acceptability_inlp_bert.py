@@ -2,6 +2,7 @@ from argparse import Namespace
 from pathlib import Path
 import random
 
+import numpy
 import numpy as np
 import pandas as pd
 import torch
@@ -68,38 +69,30 @@ def encode_text(model, data):
     return np.array(all_data_avg), np.array(all_data_cls)
 
 
-def encode_bert_states():
-    # get arguments
-    args = Namespace(
-        data_filename='SAD_train.csv',
-        text_key='text',
-    )
-
+def encode_bert_states(args):
     # get paths
-    data_path = str(DATA_DIR / args.data_filename)
-    output_path = PROJECT_DIR / 'baselines' / 'inlp' / 'bert_encodings'
-    output_path.mkdir(parents=True, exist_ok=True)
-    output_filename = args.data_filename.split('.')[0]
+    args.encodings_output_dir.mkdir(parents=True, exist_ok=True)
+    output_filename = args.raw_data_path.stem
 
     # encode
     model, tokenizer = load_lm()
-    data = pd.read_csv(data_path, index_col=0)
-    tokens = tokenize(tokenizer, data, args.text_key)
+    data = pd.read_json(args.raw_data_path)
+    tokens = tokenize(tokenizer, data, args.text_col)
     avg_data, cls_data = encode_text(model, tokens)
 
     # save encodings
     avg_data_filename = f"{output_filename}__avg.npy"
     cls_data_filename = f"{output_filename}__cls.npy"
-    np.save(str(output_path / avg_data_filename), avg_data)
-    np.save(str(output_path / cls_data_filename), cls_data)
-    print(f'Saved "{avg_data_filename}" and "{cls_data_filename}" under {str(output_path)}.')
+    np.save(str(args.encodings_output_dir / avg_data_filename), avg_data)
+    np.save(str(args.encodings_output_dir / cls_data_filename), cls_data)
+    print(f'Saved "{avg_data_filename}" and "{cls_data_filename}" under {str(args.encodings_output_dir)}.')
 
 
 def get_projection_matrix(X_train, Z_train, Y_train, X_test, Z_test, Y_test):
     P, rowspace_projections, Ws = get_debiasing_projection(
         classifier_class=SGDClassifier,
         classifier_params={'loss': 'hinge', 'penalty': 'l2', 'fit_intercept': False, 'class_weight': None, 'n_jobs': -1},
-        num_classifiers=3,
+        num_classifiers=300,
         input_dim=768,
         is_autoregressive=True,
         min_accuracy=0.,
@@ -115,7 +108,7 @@ def get_projection_matrix(X_train, Z_train, Y_train, X_test, Z_test, Y_test):
 
 
 def load_encoded_data(raw_data_path, encoded_data_path, task_label_col, treated_label_col, test_size=0.25):
-    raw_df = pd.read_csv(raw_data_path, index_col=0)[[task_label_col, treated_label_col]]
+    raw_df = pd.read_json(raw_data_path)[[task_label_col, treated_label_col]]
     raw_df = raw_df.rename(columns={task_label_col: 'Y', treated_label_col: 'Z'})
     X = np.load(encoded_data_path)
     Y = raw_df['Y']
@@ -138,19 +131,12 @@ def train_task_classifier(X, y, P=None):
     return clf
 
 
-def acceptability_inlp_bert():
-    # get arguments
-    args = Namespace(
-        raw_data_filename='SAD_train.csv',
-        encoded_data_filename='SAD_train__cls.npy',
-    )
-
+def estimate_treate_inlp(args):
     # get paths
-    raw_data_path = str(DATA_DIR / args.raw_data_filename)
-    encoded_data_path = str(ENCODED_DATA_DIR / args.encoded_data_filename)
+    encoded_data_path = str(args.encodings_output_dir / f"{args.raw_data_path.stem}__cls.npy")
 
     # load data
-    data = load_encoded_data(raw_data_path, encoded_data_path, task_label_col='sentiment', treated_label_col='acceptability_amitavasil')
+    data = load_encoded_data(args.raw_data_path, encoded_data_path, args.task_label_col, args.guarded_label_col)
 
     # run INLP
     P, _, _ = get_projection_matrix(**data)
@@ -159,9 +145,64 @@ def acceptability_inlp_bert():
     control_classifier = train_task_classifier(data['X_train'], data['Y_train'])
     treated_classifier = train_task_classifier(data['X_train'], data['Y_train'], P)
     treate_inlp = np.abs(treated_classifier.predict_proba(data['X_test']) - control_classifier.predict_proba(data['X_test'])).mean()
-    print(f'TReATE INLP: {treate_inlp:.3f}')
+
+    return treate_inlp
+
+
+def main():
+    raw_data_path = DATA_DIR / 'product_ner_domain' / 'product_ner_domain_balanced_train.json'
+
+    product_ner_domain_args = Namespace(
+        raw_data_path=raw_data_path,  # pandas df (X,Y,Z)
+        text_col='review_text',  # aka X
+        task_label_col='sentiment',  # aka Y
+        guarded_label_col='is_ps',  # aka Z
+        encodings_output_dir=ENCODED_DATA_DIR
+    )
+
+    # treate_inlp = {}
+    # for version in ['balanced', 'aggressive', 'moogzam']:
+    #     acceptability_pos_domain_args = Namespace(
+    #         raw_data_path=DATA_DIR / 'acceptability_pos_domain' / f'acceptability_pos_domain_{version}_test.json',  # pandas df (X,Y,Z)
+    #         text_col='review_text',  # aka X
+    #         task_label_col='sentiment',  # aka Y
+    #         guarded_label_col='acceptability_amitavasil',  # aka Z
+    #         encodings_output_dir=ENCODED_DATA_DIR
+    #     )
+    #
+    #     # run pipeline
+    #     args = acceptability_pos_domain_args
+    #     # encode_bert_states(args)
+    #     try:
+    #         treate_inlp[args.raw_data_path.stem] = estimate_treate_inlp(args)
+    #     except numpy.linalg.LinAlgError:
+    #         treate_inlp[args.raw_data_path.stem] = 'LinAlgError'
+
+    treate_inlp = {}
+    for version in ['balanced', 'aggressive', 'extreme']:
+        acceptability_pos_domain_args = Namespace(
+            raw_data_path=DATA_DIR / 'gender_pos' / f'gender_pos_test_{version}.json',  # pandas df (X,Y,Z)
+            text_col='review_text',  # aka X
+            task_label_col='sentiment',  # aka Y
+            guarded_label_col='is_male_specific',  # aka Z
+            encodings_output_dir=ENCODED_DATA_DIR
+        )
+
+        # df = pd.read_json(str(acceptability_pos_domain_args.raw_data_path))
+        # df['is_gender_specific'] = df['ps_tags_noman'].apply(lambda ps_tags: sum(1 if tag != 0 else 0 for tag in ps_tags) > 1).astype('int')
+        # df.to_json(str(acceptability_pos_domain_args.raw_data_path))
+
+        # run pipeline
+        args = acceptability_pos_domain_args
+        encode_bert_states(args)
+        try:
+            treate_inlp[args.raw_data_path.stem] = estimate_treate_inlp(args)
+        except numpy.linalg.LinAlgError:
+            treate_inlp[args.raw_data_path.stem] = 'LinAlgError'
+
+    for k, v in treate_inlp.items():
+        print(f'{k} TReATE INLP: {v:.3f}')
 
 
 if __name__ == '__main__':
-    encode_bert_states()
-    acceptability_inlp_bert()
+    main()
